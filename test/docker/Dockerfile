@@ -1,5 +1,8 @@
-FROM rocker/shiny:4.0.5
-# Install system requirements for index.R as needed
+# Application container for the bat dispersion prediction app.
+# Includes Shiny, Julia/Circuitscape, Slurm, and PostGIS client.
+# Used for both the test stack (docker-compose) and production deployment.
+FROM rocker/shiny:4.4.0
+
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     git-core \
@@ -9,7 +12,6 @@ RUN apt-get update && apt-get install -y \
     libudunits2-dev \
     libgeos-dev \
     libgdal-dev \
-    julia \
     libpq-dev \
     libproj-dev \
     postgresql \
@@ -18,10 +20,16 @@ RUN apt-get update && apt-get install -y \
     slurmd \
     slurmctld \
     munge \
+    gettext-base \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://install.julialang.org | sh -s -- -y
+ENV PATH="/root/.juliaup/bin:${PATH}"
+RUN ln -s /root/.juliaup/bin/julia /usr/local/bin/julia
+
 ENV _R_SHLIB_STRIP_=true
-#COPY Rprofile.site /etc/R
+
 RUN install2.r --error --skipinstalled \
     shiny \
     forecast \
@@ -44,7 +52,7 @@ RUN install2.r --error --skipinstalled \
     raster \
     Rcpp \
     rpostgis \
-    rgdal \
+    
     sf \
     shiny \
     shinyBS \
@@ -58,19 +66,26 @@ RUN install2.r --error --skipinstalled \
     uuid \
     shinycssloaders \
     future \
+    ipc \
+    promises \
     vroom
 
-RUN julia -e 'using Pkg; \
-                Pkg.add("UpdateJulia"); \
-                using UpdateJulia; \
-                update_julia()'
-RUN sudo -u shiny julia -e 'using Pkg; \
-                Pkg.add("Circuitscape")'
+RUN julia -e 'using Pkg; Pkg.add("Circuitscape")'
+
 COPY . /srv/shiny-server/batApp
-COPY shiny-server.conf /etc/shiny-server
-COPY R/slurm.conf /etc/slurm-llnl/
-COPY start.sh /sbin/
-USER root
+COPY test/docker/batapp/shiny-server.conf /etc/shiny-server/shiny-server.conf
+COPY test/docker/batapp/bats.cfg.template /opt/bats.cfg.template
+COPY test/docker/batapp/start.sh /sbin/start.sh
+COPY test/docker/slurm.conf /etc/slurm-llnl/slurm.conf
+
+RUN chmod +x /sbin/start.sh
+
 EXPOSE 3838
 ENV SHINY_LOG_STDERR=1
-CMD /sbin/start.sh
+ENV DATABASE_HOST=postgis
+ENV DATABASE_NAME=os
+ENV DATABASE_PORT=5432
+ENV DATABASE_USER=bats
+ENV DATABASE_PASSWORD=bats
+
+ENTRYPOINT ["/sbin/start.sh"]

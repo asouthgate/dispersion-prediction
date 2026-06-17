@@ -4,7 +4,6 @@
 library(leaflet)
 library(R6)
 library(raster)
-library(rgdal)
 library(rpostgis)
 library(sf)
 library(shiny)

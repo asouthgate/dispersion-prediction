@@ -6,6 +6,7 @@ library(raster)
 
 source("R/drawing.R")
 source("R/transform.R")
+source("R/shapefile_io.R")
 
 #' Remove the UI height param element i
 #'
@@ -79,7 +80,7 @@ DrawingCollection <- R6Class("DrawingCollection",
         #' @param line_mode boolean: if true, create Lines instead of Polygons
         read_shp_file = function(f, layer_name, type, line_mode) {
 
-            spdf <- rgdal::readOGR(f, layer_name)
+            spdf <- read_shapefile(f, layer_name)
 
             if (line_mode) {
                 features <- spdf@lines
@@ -367,13 +368,13 @@ DrawingCollection <- R6Class("DrawingCollection",
 
             if (!is.null(buildings)) {
                 logger::log_info(paste("Writing buildings to", shp_dir))
-                rgdal::writeOGR(buildings, shp_dir, layer = "buildings", driver = "ESRI Shapefile", overwrite_layer = T)
+                write_shapefile(buildings, shp_dir, "buildings")
             }
             if (!is.null(roads)) {
-                rgdal::writeOGR(roads, shp_dir, layer = "roads", driver = "ESRI Shapefile", overwrite_layer = T)
+                write_shapefile(roads, shp_dir, "roads")
             }
             if (!is.null(rivers)) {
-                rgdal::writeOGR(rivers, shp_dir, layer = "rivers", driver = "ESRI Shapefile", overwrite_layer = T)
+                write_shapefile(rivers, shp_dir, "rivers")
             }
             if (nrow(lights) > 0) {
                 write.csv(lights, paste0(shp_dir, "/lights.csv"))
