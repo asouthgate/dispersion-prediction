@@ -30,46 +30,15 @@ RUN ln -s /root/.juliaup/bin/julia /usr/local/bin/julia
 
 ENV _R_SHLIB_STRIP_=true
 
-RUN install2.r --error --skipinstalled \
-    shiny \
-    forecast \
-    jsonlite \
-    ggplot2 \
-    htmltools \
-    plotly \
-    bslib \
-    DBI \
-    ggplot2 \
-    glue \
-    grid \
-    gridExtra \
-    JuliaCall \
-    leaflet \
-    logger \
-    mockery \
-    mockr \
-    R6 \
-    raster \
-    Rcpp \
-    rpostgis \
-    
-    sf \
-    shiny \
-    shinyBS \
-    shinybusy \
-    shinyjs \
-    sp \
-    stringr \
-    terra \
-    testthat \
-    configr \
-    uuid \
-    shinycssloaders \
-    future \
-    ipc \
-    promises \
-    vroom
+WORKDIR /srv/shiny-server/batApp
+COPY renv.lock renv.lock
+COPY renv/activate.R renv/activate.R
+COPY renv/settings.json renv/settings.json
+COPY .Rprofile .Rprofile
 
+RUN Rscript -e "renv::restore()"
+
+WORKDIR /
 RUN julia -e 'using Pkg; Pkg.add("Circuitscape")'
 
 COPY . /srv/shiny-server/batApp

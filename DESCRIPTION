@@ -2,23 +2,34 @@ Package: shiny-bat-dispersion
 Title: Shiny app for modelling bat flight lines on a map
 Description: 
 Version: 0.1
-Author: JA Southgate (southgateJA@cardiff.ac.uk)
+Author: AJ Southgate (southgateJA@cardiff.ac.uk)
 Maintainer: 
 License: Abbreviation for an open source license
-Suggests: 
+Suggests:
+    mockery,
+    mockr,
     testthat (>= 3.0.0)
 Imports:
-    glue
-    JuliaCall
-    leaflet
-    R6
-    raster
-    rpostgis
-    sf
-    shiny
-    shinyBS
-    shinyjs
-    stringr
+    configr,
+    DBI,
+    future,
+    glue,
+    ipc,
+    JuliaCall,
+    leaflet,
+    logger,
+    promises,
+    R6,
+    raster,
+    rpostgis,
+    sf,
+    shiny,
+    shinyBS,
+    shinybusy,
+    shinyjs,
+    sp,
+    stringr,
+    terra,
     uuid
 Config/testthat/edition: 3
 RoxygenNote: 7.2.1

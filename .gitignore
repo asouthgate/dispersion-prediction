@@ -23,3 +23,8 @@ test/data/seed/gis/*/
 # Postgres dumps
 test/data/seed/sql/*.sql.gz
 test/data/seed/sql/*.backup
+
+# renv
+renv/library/
+renv/staging/
+renv/sandbox/
