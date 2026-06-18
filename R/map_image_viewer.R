@@ -71,7 +71,7 @@ MapImageViewer <- R6Class("MapImageViewer",
             private$resistance_maps <- resistance_maps
 
             for (name in names(private$resistance_maps)) {
-                terra::crs(private$resistance_maps[[name]]) <- sp::CRS("+init=epsg:27700")
+                terra::crs(private$resistance_maps[[name]]) <- sf::st_crs(27700)$proj4string
             }
 
             map_names <- c(names(private$resistance_maps), "None")
@@ -111,8 +111,8 @@ MapImageViewer <- R6Class("MapImageViewer",
                 return()
             }
 
-            terra::crs(dsm) <- sp::CRS("+init=epsg:27700")
-            terra::crs(dtm) <- sp::CRS("+init=epsg:27700")
+            terra::crs(dsm) <- sf::st_crs(27700)$proj4string
+            terra::crs(dtm) <- sf::st_crs(27700)$proj4string
 
             private$has_data <- TRUE
 
@@ -132,7 +132,7 @@ MapImageViewer <- R6Class("MapImageViewer",
             logger::log_debug("Adding current to map image viewer.")
             private$log_current_map <- log_current_map
             private$map_names <- c('Log Current', private$map_names)
-            terra::crs(private$log_current_map) <- sp::CRS("+init=epsg:27700")
+            terra::crs(private$log_current_map) <- sf::st_crs(27700)$proj4string
             shiny::updateSelectInput(session, "show_raster_select",
                 choices=private$map_names
             )

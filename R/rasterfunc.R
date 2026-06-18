@@ -100,7 +100,7 @@ create_circles <- function(groundrast, x, y, radius, n) {
         angle <- 2 * pi * (0:(3 * r )) / (3*r)
         df <- data.frame(x=x+r*sin(angle), y=y+r*cos(angle))
         # TODO: change from spatialpoints to spatiallines
-        points <- sp::SpatialPoints(df, proj4string=CRS(as.character(NA)), bbox = NULL)
+points <- sp::SpatialPoints(df, proj4string=sp::CRS(NA_character_), bbox = NULL)
         circles <- circles + raster::rasterize(points, groundrast, background=0)
     }
 

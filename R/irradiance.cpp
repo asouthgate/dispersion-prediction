@@ -18,6 +18,11 @@ void cal_irradiance_raycast(NumericMatrix& irr, int ri_lamp, int cj_lamp, float 
     int m = irr.nrow();
     int n = irr.ncol();
 
+    if (ri_lamp < 0 || ri_lamp >= m || cj_lamp < 0 || cj_lamp >= n) {
+        Rcpp::warning("cal_irradiance_raycast: lamp index out of bounds: ri=%d, cj=%d, m=%d, n=%d", ri_lamp, cj_lamp, m, n);
+        return;
+    }
+
     int minj = std::max(cj_lamp - cutoff, 0);
     int maxj = std::min(n, cj_lamp + cutoff);
     int mini = std::max(ri_lamp - cutoff, 0);
@@ -94,8 +99,8 @@ NumericMatrix cal_irradiance(NumericMatrix lights,
         float xrange = xmax - xmin;
         float yrange = ymax - ymin;
 
-        int ri_lamp = m - std::round( ((y-ymin) / yrange) * m );
-        int cj_lamp = std::round( ((x-xmin) / xrange) * n );
+        int ri_lamp = std::round( (ymax - y) / yrange * (m - 1) );
+        int cj_lamp = std::round( (x - xmin) / xrange * (n - 1) );
 
         cal_irradiance_raycast(irradiance, ri_lamp, cj_lamp, z, soft_surf, hard_surf, terrain, abs, pix, cutoff, sensor_ht);
 

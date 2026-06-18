@@ -15,3 +15,11 @@ circuitscape
 __old__
 __working_dir__
 .env
+
+# Seed GIS data (large files, not versioned)
+test/data/seed/gis/*/
+!test/data/seed/gis/*/.gitkeep
+
+# Postgres dumps
+test/data/seed/sql/*.sql.gz
+test/data/seed/sql/*.backup

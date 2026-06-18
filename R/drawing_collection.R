@@ -268,7 +268,7 @@ DrawingCollection <- R6Class("DrawingCollection",
             logger::log_info("Creating SpatialLines")
             splines <- sp::SpatialLines(list(lines))
             spd <- sp::SpatialLinesDataFrame(splines, data = d)
-            terra::crs(spd) <- sp::CRS("+init=epsg:4326")
+            terra::crs(spd) <- sf::st_crs(4326)$proj4string
             return(spd)
 
         },
@@ -464,7 +464,7 @@ DrawingCollection <- R6Class("DrawingCollection",
             logger::log_debug("Creating spatial polygons data frame...")
             spd <- sp::SpatialPolygonsDataFrame(sp::SpatialPolygons(building_polygons), data = d)
             logger::log_debug("Setting CRS...")
-            terra::crs(spd) <- sp::CRS("+init=epsg:4326")
+            terra::crs(spd) <- sf::st_crs(4326)$proj4string
             return(spd)
 
         },
@@ -524,17 +524,17 @@ DrawingCollection <- R6Class("DrawingCollection",
 
             if (!is.null(crs)) {
                 logger::log_debug("Transforming spatial data frames.")
-                crstring <- paste0("+init=epsg:", crs)
+                target_crs <- sf::st_crs(as.integer(crs))
                 if (!is.null(result$buildings)) {
                     logger::log_debug("Transforming buildings...")
-                    result$buildings <- sp::spTransform(result$buildings, crstring)
+                    result$buildings <- as(sf::st_transform(sf::st_as_sf(result$buildings), target_crs), "Spatial")
                 }
                 if (!is.null(result$rivers)) {
                     logger::log_debug("Transforming rivers...")
-                    result$rivers <- sp::spTransform(result$rivers, crstring)
+                    result$rivers <- as(sf::st_transform(sf::st_as_sf(result$rivers), target_crs), "Spatial")
                 }
                 if (!is.null(result$roads)) {
-                    result$roads <- sp::spTransform(result$roads, crstring)
+                    result$roads <- as(sf::st_transform(sf::st_as_sf(result$roads), target_crs), "Spatial")
                 }
                 if (nrow(result$lights) > 0) {
                     logger::log_info("Transforming lights")
