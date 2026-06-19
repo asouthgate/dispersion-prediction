@@ -21,10 +21,10 @@ create_extent <- function(x, y, delta) {
 vector_convert_points <- function(df, old, new) {
     logger::log_debug("Converting points...")
     coordsdf <- data.frame(newx=df$x, newy=df$y)
-    old <- CRS(paste0("+init=epsg:", old))
-    new <- CRS(paste0("+init=epsg:", new))
-    spdf <- SpatialPointsDataFrame(data=df, coords=coordsdf, proj4string=old)
-    spdf2 <- as.data.frame(spTransform(spdf, new))
+    old_crs <- sp::CRS(sf::st_crs(as.integer(old))$proj4string)
+    new_crs <- sp::CRS(sf::st_crs(as.integer(new))$proj4string)
+    spdf <- SpatialPointsDataFrame(data=df, coords=coordsdf, proj4string=old_crs)
+    spdf2 <- as.data.frame(as(sf::st_transform(sf::st_as_sf(spdf), sf::st_crs(as.integer(new))), "Spatial"))
     ret <- df
     ret$x <- spdf2$newx
     ret$y <- spdf2$newy

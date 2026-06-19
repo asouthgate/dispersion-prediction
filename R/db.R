@@ -163,7 +163,7 @@ read_db_raster_custom2 <- function(table, ext, db_host, db_name, db_port, db_use
     dbmaxy <- metavals[3]
     dbminy <- metavals[4]
     
-    r <- raster::raster(nrows=nrows, ncols=ncols, xmn=dbminx, xmx=dbmaxx, ymn=dbminy, ymx=dbmaxy, crs=sp::CRS("+init=epsg:27700"))
+    r <- raster::raster(nrows=nrows, ncols=ncols, xmn=dbminx, xmx=dbmaxx, ymn=dbminy, ymx=dbmaxy, crs=sf::st_crs(27700)$proj4string)
 
     A <- array(vals, c(ncols, nrows))
     r[] <- t(A)
@@ -253,7 +253,7 @@ read_db_raster_custom <- function(table, ext, db_host, db_name, db_port, db_user
     cat(dbmaxx, dbminx, dbmaxy, dbminy, "\n")
 
     
-    r <- raster::raster(nrows=nrows, ncols=ncols, xmn=dbminx, xmx=dbmaxx, ymn=dbminy, ymx=dbmaxy, crs=sp::CRS("+init=epsg:27700"))
+    r <- raster::raster(nrows=nrows, ncols=ncols, xmn=dbminx, xmx=dbmaxx, ymn=dbminy, ymx=dbmaxy, crs=sf::st_crs(27700)$proj4string)
     raster::values(r) <- vals
     raster::crop(r, ext)
 

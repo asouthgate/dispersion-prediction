@@ -2,10 +2,12 @@ library(R6)
 library(leaflet)
 library(shiny)
 library(shinyBS)
+library(shinyjs)
 library(raster)
 
 source("R/drawing.R")
 source("R/transform.R")
+source("R/shapefile_io.R")
 
 #' Remove the UI height param element i
 #'
@@ -79,7 +81,7 @@ DrawingCollection <- R6Class("DrawingCollection",
         #' @param line_mode boolean: if true, create Lines instead of Polygons
         read_shp_file = function(f, layer_name, type, line_mode) {
 
-            spdf <- rgdal::readOGR(f, layer_name)
+            spdf <- read_shapefile(f, layer_name)
 
             if (line_mode) {
                 features <- spdf@lines
@@ -267,7 +269,7 @@ DrawingCollection <- R6Class("DrawingCollection",
             logger::log_info("Creating SpatialLines")
             splines <- sp::SpatialLines(list(lines))
             spd <- sp::SpatialLinesDataFrame(splines, data = d)
-            terra::crs(spd) <- sp::CRS("+init=epsg:4326")
+            terra::crs(spd) <- sf::st_crs(4326)$proj4string
             return(spd)
 
         },
@@ -367,13 +369,13 @@ DrawingCollection <- R6Class("DrawingCollection",
 
             if (!is.null(buildings)) {
                 logger::log_info(paste("Writing buildings to", shp_dir))
-                rgdal::writeOGR(buildings, shp_dir, layer = "buildings", driver = "ESRI Shapefile", overwrite_layer = T)
+                write_shapefile(buildings, shp_dir, "buildings")
             }
             if (!is.null(roads)) {
-                rgdal::writeOGR(roads, shp_dir, layer = "roads", driver = "ESRI Shapefile", overwrite_layer = T)
+                write_shapefile(roads, shp_dir, "roads")
             }
             if (!is.null(rivers)) {
-                rgdal::writeOGR(rivers, shp_dir, layer = "rivers", driver = "ESRI Shapefile", overwrite_layer = T)
+                write_shapefile(rivers, shp_dir, "rivers")
             }
             if (nrow(lights) > 0) {
                 write.csv(lights, paste0(shp_dir, "/lights.csv"))
@@ -463,7 +465,7 @@ DrawingCollection <- R6Class("DrawingCollection",
             logger::log_debug("Creating spatial polygons data frame...")
             spd <- sp::SpatialPolygonsDataFrame(sp::SpatialPolygons(building_polygons), data = d)
             logger::log_debug("Setting CRS...")
-            terra::crs(spd) <- sp::CRS("+init=epsg:4326")
+            terra::crs(spd) <- sf::st_crs(4326)$proj4string
             return(spd)
 
         },
@@ -523,17 +525,17 @@ DrawingCollection <- R6Class("DrawingCollection",
 
             if (!is.null(crs)) {
                 logger::log_debug("Transforming spatial data frames.")
-                crstring <- paste0("+init=epsg:", crs)
+                target_crs <- sf::st_crs(as.integer(crs))
                 if (!is.null(result$buildings)) {
                     logger::log_debug("Transforming buildings...")
-                    result$buildings <- sp::spTransform(result$buildings, crstring)
+                    result$buildings <- as(sf::st_transform(sf::st_as_sf(result$buildings), target_crs), "Spatial")
                 }
                 if (!is.null(result$rivers)) {
                     logger::log_debug("Transforming rivers...")
-                    result$rivers <- sp::spTransform(result$rivers, crstring)
+                    result$rivers <- as(sf::st_transform(sf::st_as_sf(result$rivers), target_crs), "Spatial")
                 }
                 if (!is.null(result$roads)) {
-                    result$roads <- sp::spTransform(result$roads, crstring)
+                    result$roads <- as(sf::st_transform(sf::st_as_sf(result$roads), target_crs), "Spatial")
                 }
                 if (nrow(result$lights) > 0) {
                     logger::log_info("Transforming lights")

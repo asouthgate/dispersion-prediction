@@ -1,3 +1,11 @@
+library(shiny)
+library(future)
+library(promises)
+library(ipc)
+library(raster)
+library(sp)
+library(leaflet)
+
 #' Exclude any lamps too far from the roost
 #'
 #' @param df
@@ -245,7 +253,7 @@ async_get_coverage <- function(session, algorithm_parameters, miv, working_dir) 
         raster_inp <- fetch_raster_inputs(algorithm_parameters, groundrast, working_dir)
 
         disk <- create_disk_mask(groundrast, algorithm_parameters$roost$x, algorithm_parameters$roost$y, algorithm_parameters$roost$radius)
-        terra::crs(disk) <- sp::CRS("+init=epsg:27700")
+        terra::crs(disk) <- sf::st_crs(27700)$proj4string
 
         images <- list(disk=disk, dsm=raster_inp$r_dsm, dtm=raster_inp$r_dtm)
 
