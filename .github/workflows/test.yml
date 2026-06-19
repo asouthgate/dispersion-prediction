@@ -34,7 +34,11 @@ jobs:
             libxml2-dev \
             libpq-dev
 
-      - uses: r-lib/actions/setup-renv@v2
+      - name: Install renv and restore packages
+        run: |
+          RENV_PATHS_ROOT=${{ runner.temp }}/renv
+          echo "RENV_PATHS_ROOT=$RENV_PATHS_ROOT" >> $GITHUB_ENV
+          Rscript -e "options(repos = c(CRAN = '${{ env.RENV_CONFIG_REPOS_OVERRIDE }}')); if (!requireNamespace('renv', quietly = TRUE)) install.packages('renv'); renv::restore()"
 
       - name: Run unit tests
         run: Rscript test/run_unit_tests.R
