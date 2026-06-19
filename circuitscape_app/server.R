@@ -9,6 +9,7 @@ library(sf)
 library(shiny)
 library(shinyBS)
 library(shinyjs)
+library(stringr)
 library(uuid)
 library(ipc)
 

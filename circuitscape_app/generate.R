@@ -1,3 +1,11 @@
+library(shiny)
+library(future)
+library(promises)
+library(ipc)
+library(raster)
+library(sp)
+library(leaflet)
+
 #' Exclude any lamps too far from the roost
 #'
 #' @param df

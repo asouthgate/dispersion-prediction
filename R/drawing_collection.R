@@ -2,6 +2,7 @@ library(R6)
 library(leaflet)
 library(shiny)
 library(shinyBS)
+library(shinyjs)
 library(raster)
 
 source("R/drawing.R")

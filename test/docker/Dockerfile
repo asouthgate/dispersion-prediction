@@ -1,7 +1,7 @@
 # Application container for the bat dispersion prediction app.
 # Includes Shiny, Julia/Circuitscape, Slurm, and PostGIS client.
 # Used for both the test stack (docker-compose) and production deployment.
-FROM rocker/shiny:4.4.0
+FROM rocker/shiny:4.3.3
 
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     libgdal-dev \
     libpq-dev \
     libproj-dev \
+    libuv1 \
     postgresql \
     postgis \
     curl \
@@ -30,16 +31,23 @@ RUN ln -s /root/.juliaup/bin/julia /usr/local/bin/julia
 
 ENV _R_SHLIB_STRIP_=true
 
-WORKDIR /srv/shiny-server/batApp
-COPY renv.lock renv.lock
-COPY renv/activate.R renv/activate.R
-COPY renv/settings.json renv/settings.json
-COPY .Rprofile .Rprofile
+COPY test/docker/JuliaProject.toml /srv/shiny-server/batApp/JuliaProject.toml
+COPY test/docker/JuliaManifest.toml /srv/shiny-server/batApp/JuliaManifest.toml
 
-RUN Rscript -e "renv::restore()"
+WORKDIR /srv/shiny-server/batApp
+COPY .Rprofile.docker /srv/shiny-server/batApp/.Rprofile
+COPY renv.lock /srv/shiny-server/batApp/renv.lock
+COPY renv/ /srv/shiny-server/batApp/renv/
+
+# For binary package installation, use the RStudio Package Manager CRAN mirror...
+RUN echo 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/jammy/latest"))' >> /usr/local/lib/R/etc/Rprofile.site
+RUN Rscript -e "install.packages('renv')"
+RUN Rscript -e "renv::restore(library = '/usr/local/lib/R/site-library')"
+
+RUN ls -la /srv/shiny-server/batApp/renv/library/
 
 WORKDIR /
-RUN julia -e 'using Pkg; Pkg.add("Circuitscape")'
+RUN julia -e 'using Pkg; Pkg.activate("/srv/shiny-server/batApp"); Pkg.instantiate()'
 
 COPY . /srv/shiny-server/batApp
 COPY test/docker/batapp/shiny-server.conf /etc/shiny-server/shiny-server.conf
