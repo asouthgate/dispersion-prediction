@@ -1,0 +1,19 @@
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY gsbio-engine/package.json gsbio-engine/package-lock.json ./gsbio-engine/
+COPY dispersion-prediction-app/frontend/package.json dispersion-prediction-app/frontend/package-lock.json ./frontend/
+
+RUN cd frontend && npm install
+
+COPY gsbio-engine/ ./gsbio-engine/
+COPY dispersion-prediction-app/frontend/ ./frontend/
+
+RUN cd gsbio-engine && npm run build
+
+WORKDIR /app/frontend
+
+EXPOSE 5180
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

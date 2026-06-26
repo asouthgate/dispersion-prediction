@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgis:
     image: postgis/postgis:13-3.1
@@ -11,8 +9,8 @@ services:
       - "${DATABASE_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./test/data/seed/sql:/docker-entrypoint-initdb.d
-      - ./test/data/seed:/seed
+      - ./data/seed/sql:/docker-entrypoint-initdb.d
+      - ./data/seed:/seed
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-bats} -d ${DATABASE_NAME:-os}"]
       interval: 5s
@@ -20,23 +18,38 @@ services:
       retries: 10
       start_period: 10s
 
-  batapp:
+  api:
     build:
-      context: ..
-      dockerfile: test/docker/Dockerfile
+      dockerfile: test/docker/Dockerfile.backend
     ports:
-      - "3838:3838"
+      - "8000:8000"
     depends_on:
       postgis:
         condition: service_healthy
     environment:
+      DB_HOST: postgis
+      DB_NAME: ${DATABASE_NAME:-os}
+      DB_PORT: 5432
+      DB_USER: ${DATABASE_USER:-bats}
+      DB_PASSWORD: ${DATABASE_PASSWORD:-bats}
       DATABASE_HOST: postgis
       DATABASE_NAME: ${DATABASE_NAME:-os}
       DATABASE_PORT: 5432
       DATABASE_USER: ${DATABASE_USER:-bats}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
+      CORS_ORIGINS: http://localhost:5180,http://localhost:5173,http://localhost:4173
     volumes:
-      - ./test/data/seed:/seed
+      - ./data/seed:/seed
+
+  frontend:
+    build:
+      dockerfile: test/docker/Dockerfile.frontend
+    ports:
+      - "5180:5180"
+    depends_on:
+      - api
+    environment:
+      VITE_PROXY_API: http://api:8000
 
 volumes:
   pgdata:
