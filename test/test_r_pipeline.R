@@ -39,8 +39,8 @@ logger::log_info("Database: %s@%s:%s/%s", db_user, db_host, db_port, db_name)
 test_that("Resistance pipeline produces expected output layers", {
 
     resolution <- 10
-    radius <- 1000
-    roost_bng <- list(x = 287490, y = 77932)
+    roost_bng <- list(x = 287500, y = 74500)
+    radius <- 500
 
     logger::log_info("Creating algorithm parameters...")
     algorithm_parameters <- AlgorithmParameters$new(
@@ -92,8 +92,26 @@ test_that("Resistance pipeline produces expected output layers", {
         logger::log_warn("Some raster data failed to load - coverage may be incomplete")
     }
 
+    logger::log_info("Saving raw DTM/DSM/LCM for coverage diagnostics...")
+    for (name in c("r_dsm", "r_dtm", "lcm_r")) {
+        rast <- raster_inp[[name]]
+        if (!is.null(rast) && inherits(rast, "RasterLayer")) {
+            fname <- sub("^r_", "", name)
+            tif_path <- file.path(working_dir, paste0(fname, ".tif"))
+            raster::writeRaster(rast, tif_path, "GTiff", overwrite = TRUE)
+            save_image(rast, paste0(fname, ".png"), working_dir)
+        }
+    }
+
     logger::log_info("Post-processing inputs...")
-    lamps <- data.frame(x = numeric(0), y = numeric(0), z = numeric(0))
+    set.seed(42)
+    n_lamps <- 10
+    lamps <- data.frame(
+        x = runif(n_lamps, roost_bng$x - radius + 50, roost_bng$x + radius - 50),
+        y = runif(n_lamps, roost_bng$y - radius + 50, roost_bng$y + radius - 50),
+        z = runif(n_lamps, 2, 15)
+    )
+    logger::log_info("Generated %d random lamps within study area", nrow(lamps))
     spdfs <- list(buildings = NULL, roads = NULL, rivers = NULL, lights = NULL)
     base_inputs <- suppressWarnings(
         postprocess_inputs(algorithm_parameters, groundrast, vector_inp, raster_inp, working_dir, lamps, spdfs)
@@ -106,6 +124,8 @@ test_that("Resistance pipeline produces expected output layers", {
 
     logger::log_info("Computing resistance rasters...")
     resistance_maps <- cal_resistance_rasters(algorithm_parameters, working_dir, base_inputs, save_images = TRUE)
+    resistance_maps$dsm <- raster_inp$r_dsm
+    resistance_maps$dtm <- raster_inp$r_dtm
 
     expected_layers <- c(
         "road_res", "river_res", "landscape_res", "linear_res",

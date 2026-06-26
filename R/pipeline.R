@@ -70,6 +70,10 @@ combine_extra_geoms <- function(geom, extra_geom) {
 #' Squash vals into a range
 squash_vals <- function(r) {
     nona <- raster::values(r)[!is.na(raster::values(r))]
+    if (length(nona) == 0) {
+        logger::log_warn("squash_vals: all values are NA, returning raster unchanged")
+        return(r)
+    }
     maxx <- max(nona)
     minx <- min(nona)
     a <- 1
@@ -142,13 +146,13 @@ fetch_raster_inputs <- function(algorithm_parameters, groundrast, working_dir) {
     default_raster <- groundrast
     raster::values(default_raster) <- NA
     dtm_result <- read_db_raster_default(dtm_table, ext, database_host, database_name, 
-                        database_port, database_user, database_password, default_raster, resolution, TRUE)
+                        database_port, database_user, database_password, default_raster, resolution, FALSE)
     dtm <- dtm_result$raster
     dtm_failed <- dtm_result$failflag
 
     logger::log_info("Fetching dsm raster from db")
     dsm_result <- read_db_raster_default(dsm_table, ext, database_host, database_name,
-                        database_port, database_user, database_password, default_raster, resolution, TRUE)
+                        database_port, database_user, database_password, default_raster, resolution, FALSE)
     dsm <- dsm_result$raster
     dsm_failed <- dsm_result$failflag
 
@@ -351,6 +355,15 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
         save_image(log(totalRes_unnorm), "log_totalRes_unnorm.png", working_dir)
         save_image(log(totalRes), "log_resistance.png", working_dir)
         save_image(circles, "circles.png", working_dir)
+    }
+
+    n_total <- length(raster::values(totalRes))
+    n_valid <- sum(!is.na(raster::values(totalRes)))
+    pct <- round(100 * n_valid / n_total, 1)
+    if (pct < 50) {
+        logger::log_warn("Total resistance coverage: %d/%d pixels (%.1f%%) -- sparse data, check LiDAR coverage", n_valid, n_total, pct)
+    } else {
+        logger::log_info("Total resistance coverage: %d/%d pixels (%.1f%%)", n_valid, n_total, pct)
     }
 
     return(list(road_res=roadRes, buildings=buildings, river_res=riverRes, 

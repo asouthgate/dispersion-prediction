@@ -1,6 +1,55 @@
 # Introduction
 
-This repository contains the code that implements the [Shiny](https://shiny.rstudio.com) app for the *Predicting bat dispersion through urban environments* project. Most of the calculations are performed by [R](https://www.r-project.org) to set up the inputs to the [Circuitscape](https://docs.circuitscape.org/Circuitscape.jl/latest/) calculation that is implemented in [Julia](https://julialang.org). The app queries a [PostGIS](https://postgis.net) database for the vector and raster data required to perform the calculations.
+This repository contains the code that implements the *Predicting bat dispersion through urban environments* project. It now has two interfaces:
+
+- **React + FastAPI** (new) — a TypeScript/React frontend using the `gsbio-engine` for map drawing and a FastAPI Python backend that calls the existing R pipeline as a subprocess.
+- **Shiny** (legacy) — the original R Shiny app.
+
+Most of the calculations are performed by [R](https://www.r-project.org) to set up the inputs to the [Circuitscape](https://docs.circuitscape.org/Circuitscape.jl/latest/) calculation that is implemented in [Julia](https://julialang.org). The app queries a [PostGIS](https://postgis.net) database for the vector and raster data required to perform the calculations.
+
+# Quick Start (React + FastAPI)
+
+Build the engine, then start the API and frontend in two terminals:
+
+```bash
+# Terminal 1 — build and start the API
+cd api
+pip install -r requirements.txt       # or use the existing .venv
+.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 2 — build and start the frontend
+cd gsbio-engine && npm install && npm run build
+cd ../frontend && npm install && npm run dev -- --port 5180 --host 0.0.0.0
+```
+
+Open `http://localhost:5180`. The frontend runs its own Vite dev server on port 5180; it proxies pipeline requests to the API on port 8000.
+
+## Running tests
+
+```bash
+# engine unit tests
+cd gsbio-engine && npx vitest run
+
+# frontend type-check + build
+cd frontend && npm run build
+```
+
+## Project structure
+
+```
+frontend/       React + TypeScript + gsbio-engine (Vite)
+  src/
+    components/   MapView, SidePanel, RoostPanel, ParameterPanel, FeaturePanel, GeneratePanel, FileUpload
+    models/       horseshoeBat model definition + executor (API polling)
+    utils/        WGS84 ↔ BNG coordinate transforms (proj4)
+api/            FastAPI Python backend
+  routers/       POST /api/pipeline/{coverage,resistance,current}, GET /api/pipeline/{job_id}
+  services/      R subprocess bridge, PostGIS queries, raster → PNG conversion
+gsbio-engine/   Simulation engine (symlinked, built separately)
+app/            Legacy React prototype (not used)
+```
+
+
 
 # Installation
 

@@ -18,6 +18,7 @@ services:
       retries: 10
       start_period: 10s
   api:
+    image: dispersion-prediction-app-api
     build:
       dockerfile: test/docker/Dockerfile.backend
     ports:

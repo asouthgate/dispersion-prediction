@@ -63,9 +63,9 @@ COPY R/ /app/R/
 COPY scripts/ /app/scripts/
 COPY R/cs.ini.template /app/R/cs.ini.template
 COPY test/docker/batapp/bats.cfg.template /opt/bats.cfg.template
+RUN Rscript -e "install.packages('testthat')"
 
 COPY test/ /app/test/
-RUN Rscript -e "install.packages('testthat')"
 
 
 ENV PIPELINE_WORK_DIR=/tmp/circuitscape

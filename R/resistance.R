@@ -43,6 +43,7 @@ cal_distance_raster <- function(data, groundrast) {
 cal_road_resistance <- function(roads, groundrast, buffer, resmax, xmax) {
 
     if (length(roads)  == 0) {
+        logger::log_warn("No road data in study area -- road resistance will be zero everywhere")
         resistance <- groundrast
         raster::values(resistance) <- 0
         terra::crs(resistance) <- terra::crs(groundrast)
@@ -75,6 +76,7 @@ cal_river_resistance <- function(river, groundrast, buffer, resmax, xmax) {
     rbuff <- resmax
 
     if (length(river)  == 0) {
+        logger::log_warn("No river data in study area -- river resistance will be max everywhere")
         resistance <- groundrast
         raster::values(resistance) <- rbuff
         return(resistance)
