@@ -31,9 +31,13 @@ def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float
 
         # Normalize to 0-255 for PNG
         import numpy as np
-        valid = ~src.nodata if src.nodata is not None else np.ones_like(data, dtype=bool)
+        nodata_val = src.nodata
+        if nodata_val is not None:
+            valid = data != nodata_val
+        else:
+            valid = np.ones_like(data, dtype=bool)
 
-        if valid is not None and not np.all(valid):
+        if not np.all(valid):
             data = data.copy()
             data[~valid] = np.nan
 

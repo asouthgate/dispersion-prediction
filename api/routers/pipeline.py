@@ -25,7 +25,7 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def _create_work_dir(job_id: str) -> str:
@@ -139,7 +139,7 @@ def _check_r_available() -> tuple[bool, str]:
         return False, "R environment not configured. Resistance and Current pipelines require R. Only Coverage is available in this deployment."
 
     scripts = [
-        os.path.join(REPO_ROOT, "scripts", "run_resistance_pipeline.R"),
+        os.path.join(REPO_ROOT, "scripts", "run_resistance_pipeline_json.R"),
         os.path.join(REPO_ROOT, "scripts", "run_circuitscape.R"),
     ]
     missing = [s for s in scripts if not os.path.exists(s)]
@@ -190,7 +190,7 @@ def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
     wif(work_dir, roost, features, lamps, params)
 
     r_script_map = {
-        "resistance": "scripts/run_resistance_pipeline.R",
+        "resistance": "scripts/run_resistance_pipeline_json.R",
         "current": "scripts/run_circuitscape.R",
     }
     rscript = r_script_map.get(stage)
@@ -207,8 +207,8 @@ def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
     logger.info("Running R pipeline: stage=%s script=%s", stage, script_path)
     try:
         proc = subprocess.run(
-            ["Rscript", script_path, os.path.join(work_dir, "inputs.json")],
-            cwd=work_dir, env=env,
+            ["Rscript", "--no-init-file", script_path, os.path.join(work_dir, "inputs.json")],
+            cwd=REPO_ROOT, env=env,
             capture_output=True, text=True, timeout=600,
         )
     except FileNotFoundError:
@@ -241,7 +241,10 @@ def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
         png_path = os.path.join(work_dir, "images", png_name)
         from services.raster_service import get_bounds_for_tif
         bounds = get_bounds_for_tif(tif_path)
-        tif_to_png(tif_path, png_path, bounds)
+        if not os.path.exists(png_path):
+            tif_to_png(tif_path, png_path, bounds)
+        else:
+            logger.debug("PNG already exists: %s (R-generated, skipping conversion)", png_name)
         result_layers.append({
             "id": layer["name"],
             "url": f"/api/rasters/{os.path.basename(work_dir)}/{layer['id']}.png",

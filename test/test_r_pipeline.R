@@ -24,6 +24,7 @@ source("R/transform.R")
 source("R/rasterfunc.R")
 source("R/resistance.R")
 source("R/pipeline.R")
+source("R/write_outputs.R")
 
 logger::log_info("Reading database config...")
 config <- configr::read.config("~/.bats.cfg")
@@ -92,17 +93,6 @@ test_that("Resistance pipeline produces expected output layers", {
         logger::log_warn("Some raster data failed to load - coverage may be incomplete")
     }
 
-    logger::log_info("Saving raw DTM/DSM/LCM for coverage diagnostics...")
-    for (name in c("r_dsm", "r_dtm", "lcm_r")) {
-        rast <- raster_inp[[name]]
-        if (!is.null(rast) && inherits(rast, "RasterLayer")) {
-            fname <- sub("^r_", "", name)
-            tif_path <- file.path(working_dir, paste0(fname, ".tif"))
-            raster::writeRaster(rast, tif_path, "GTiff", overwrite = TRUE)
-            save_image(rast, paste0(fname, ".png"), working_dir)
-        }
-    }
-
     logger::log_info("Post-processing inputs...")
     set.seed(42)
     n_lamps <- 10
@@ -124,8 +114,6 @@ test_that("Resistance pipeline produces expected output layers", {
 
     logger::log_info("Computing resistance rasters...")
     resistance_maps <- cal_resistance_rasters(algorithm_parameters, working_dir, base_inputs, save_images = TRUE)
-    resistance_maps$dsm <- raster_inp$r_dsm
-    resistance_maps$dtm <- raster_inp$r_dtm
 
     expected_layers <- c(
         "road_res", "river_res", "landscape_res", "linear_res",
@@ -148,19 +136,18 @@ test_that("Resistance pipeline produces expected output layers", {
 
     logger::log_info("All resistance layers produced successfully.")
 
-    logger::log_info("Writing output rasters to GeoTIFF...")
-    for (layer_name in names(resistance_maps)) {
-        rast <- resistance_maps[[layer_name]]
-        if (inherits(rast, "RasterLayer")) {
-            out_path <- file.path(working_dir, paste0(layer_name, ".tif"))
-            raster::writeRaster(rast, out_path, "GTiff", overwrite = TRUE)
-            expect_true(file.exists(out_path))
-        }
+    write_pipeline_outputs(resistance_maps, raster_inp, working_dir)
+
+    for (layer_name in expected_layers) {
+        expect_true(file.exists(file.path(working_dir, paste0(layer_name, ".tif"))),
+                    info = paste("TIF missing:", layer_name))
     }
+    expect_true(file.exists(file.path(working_dir, "dsm.tif")))
+    expect_true(file.exists(file.path(working_dir, "dtm.tif")))
+    expect_true(file.exists(file.path(working_dir, "lcm_r.tif")))
 
     logger::log_info("Output rasters written to %s", working_dir)
 
-    # unlink(working_dir, recursive = TRUE)
     logger::log_info("Test 1 passed: R pipeline produces all expected layers.")
 })
 
