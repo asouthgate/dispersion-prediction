@@ -90,7 +90,7 @@ def _compute_extent_from_roost(roost: dict[str, Any], resolution: float = 10.0) 
     return (xmin, ymin, xmax, ymax)
 
 
-def _run_coverage_python(work_dir: str, roost: dict[str, Any] | None, resolution: float = 10.0) -> list[dict[str, Any]]:
+def _run_coverage_python(work_dir: str, roost: dict[str, Any] | None, resolution: float = 10.0) -> tuple[list[dict[str, Any]], list[str]]:
     """Run coverage pipeline using Python directly (no R needed)."""
     import time as _time
 
@@ -126,7 +126,7 @@ def _run_coverage_python(work_dir: str, roost: dict[str, Any] | None, resolution
         raise RuntimeError("Coverage pipeline produced no result layers — check database raster data")
 
     logger.info("Coverage pipeline completed in %.1fs, %d layers", elapsed, len(layers))
-    return layers
+    return layers, []
 
 
 def _check_r_available() -> tuple[bool, str]:
@@ -158,7 +158,7 @@ def _sanitize_error(message: str) -> str:
 
     if "no such file or directory" in lower and "rscript" in lower:
         return "R environment not configured. Resistance and Current pipelines require R. Only Coverage is available in this deployment."
-    if "r script not found" in lower or "no such file" in lower:
+    if "r script not found" in lower:
         return "The pipeline script is not available on this server."
     if "timed out" in lower or "timeout" in lower:
         return "The pipeline took too long to complete. Try a smaller area or higher resolution value."
@@ -168,15 +168,29 @@ def _sanitize_error(message: str) -> str:
         return "The server is unable to access required data files."
     if "database" in lower or "postgres" in lower:
         return "Unable to connect to the spatial database. Please try again later."
+    known_safe = (
+        "no roost defined",
+        "unknown pipeline stage",
+        "r environment not configured",
+        "the pipeline took too long",
+        "no data is available",
+    )
+    lower_clean = lower.strip()
+    if any(lower_clean.startswith(p) for p in known_safe):
+        return message
     if len(message) > 200:
         return "An internal error occurred. Please try again or contact support."
-    return message
+    return "An internal error occurred. Please try again or contact support."
 
 
 def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
                     features: list[dict[str, Any]], lamps: list[dict[str, Any]],
-                    params: dict[str, int | float]) -> list[dict[str, Any]]:
-    """Run an R pipeline script via subprocess."""
+                    params: dict[str, int | float], _job_id: str = "") -> tuple[list[dict[str, Any]], list[str]]:
+    """Run an R pipeline script via subprocess.
+
+    Returns (layers, warnings).  Stores the subprocess handle in _jobs for cancellation.
+    """
+    import re
     import time as _time
 
     t0 = _time.monotonic()
@@ -206,23 +220,39 @@ def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
 
     logger.info("Running R pipeline: stage=%s script=%s", stage, script_path)
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             ["Rscript", "--no-init-file", script_path, os.path.join(work_dir, "inputs.json")],
             cwd=REPO_ROOT, env=env,
-            capture_output=True, text=True, timeout=600,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        if _job_id:
+            with _lock:
+                if _job_id in _jobs:
+                    _jobs[_job_id]["_proc"] = proc
+        stdout, stderr = proc.communicate(timeout=600)
     except FileNotFoundError:
         raise RuntimeError(
             "R environment not configured. Resistance and Current pipelines require R. "
             "Only Coverage is available in this deployment."
         )
     except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
         raise RuntimeError(
             "The pipeline took too long to complete. Try a smaller study area or a higher resolution value."
         )
 
+    warnings = re.findall(r'WARN\s+\[.*?\]\s+(.*)', stderr or "")
+
     if proc.returncode != 0:
-        stderr_tail = proc.stderr[-500:] if proc.stderr else "(no output)"
+        cancelled = False
+        if _job_id:
+            with _lock:
+                cancelled = _job_id in _jobs and _jobs[_job_id].get("status") == "cancelled"
+        if cancelled:
+            logger.info("R pipeline was cancelled (rc=%d), not treating as error", proc.returncode)
+            return [], warnings
+        stderr_tail = (stderr or "")[-500:] or "(no output)"
         logger.error("R pipeline failed (rc=%d): %s", proc.returncode, stderr_tail)
         raise RuntimeError(f"R pipeline failed (rc={proc.returncode}): {stderr_tail[:300]}")
 
@@ -241,10 +271,7 @@ def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
         png_path = os.path.join(work_dir, "images", png_name)
         from services.raster_service import get_bounds_for_tif
         bounds = get_bounds_for_tif(tif_path)
-        if not os.path.exists(png_path):
-            tif_to_png(tif_path, png_path, bounds)
-        else:
-            logger.debug("PNG already exists: %s (R-generated, skipping conversion)", png_name)
+        tif_to_png(tif_path, png_path, bounds)
         result_layers.append({
             "id": layer["name"],
             "url": f"/api/rasters/{os.path.basename(work_dir)}/{layer['id']}.png",
@@ -252,8 +279,8 @@ def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
         })
 
     elapsed = _time.monotonic() - t0
-    logger.info("R pipeline completed in %.1fs, %d layers", elapsed, len(result_layers))
-    return result_layers
+    logger.info("R pipeline completed in %.1fs, %d layers, %d warnings", elapsed, len(result_layers), len(warnings))
+    return result_layers, warnings
 
 
 def _run_in_background(job_id: str, work_dir: str, stage: str,
@@ -270,7 +297,7 @@ def _run_in_background(job_id: str, work_dir: str, stage: str,
 
     try:
         with _lock:
-            if job_id in _jobs:
+            if job_id in _jobs and _jobs[job_id].get("status") != "cancelled":
                 _jobs[job_id]["status"] = "running"
                 _jobs[job_id]["progress_label"] = f"Running {stage} pipeline..."
 
@@ -280,26 +307,28 @@ def _run_in_background(job_id: str, work_dir: str, stage: str,
             with _lock:
                 if job_id in _jobs:
                     _jobs[job_id]["progress_label"] = "Fetching coverage data..."
-            layers = _run_coverage_python(work_dir, roost, resolution=resolution)
+            layers, warnings = _run_coverage_python(work_dir, roost, resolution=resolution)
         elif stage in ("resistance", "current"):
             if not roost:
                 raise ValueError("No roost defined — place a roost on the map before running the pipeline.")
             with _lock:
                 if job_id in _jobs:
                     _jobs[job_id]["progress_label"] = "Computing resistance maps..."
-            layers = _run_r_pipeline(work_dir, stage, roost, features, lamps, params)
+            layers, warnings = _run_r_pipeline(work_dir, stage, roost, features, lamps, params, _job_id=job_id)
         else:
             raise ValueError(f"Unknown pipeline stage: {stage}")
 
         elapsed = time.monotonic() - t0
         with _lock:
-            if job_id in _jobs:
+            if job_id in _jobs and _jobs[job_id].get("status") != "cancelled":
                 _jobs[job_id]["status"] = "completed"
                 _jobs[job_id]["progress"] = 1.0
                 _jobs[job_id]["progress_label"] = "Done"
                 _jobs[job_id]["layers"] = layers
+                _jobs[job_id]["warnings"] = warnings
 
-        logger.info("Job %s: completed in %.1fs, %d layers", job_id, elapsed, len(layers))
+        logger.info("Job %s: completed in %.1fs, %d layers, %d warnings",
+                     job_id, elapsed, len(layers), len(warnings))
 
     except Exception as e:
         friendly = _sanitize_error(str(e))
@@ -348,9 +377,11 @@ def _start_pipeline(stage: str, req: PipelineRequest) -> PipelineStartResponse:
             "progress": 0.0,
             "progress_label": "Initializing...",
             "error": None,
+            "warnings": [],
             "layers": None,
             "stage": stage,
             "work_dir": work_dir,
+            "_proc": None,
         }
 
     roost = req.roost.model_dump() if req.roost else None
@@ -390,6 +421,7 @@ async def get_job_status(job_id: str):
         progress=job["progress"],
         progress_label=job.get("progress_label", ""),
         error=job.get("error"),
+        warnings=job.get("warnings", []),
         layers=layers,
     )
 
@@ -401,5 +433,11 @@ async def cancel_job(job_id: str):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         job["status"] = "cancelled"
+        proc = job.pop("_proc", None)
+    if proc is not None:
+        try:
+            proc.kill()
+        except Exception:
+            pass
     logger.info("Job %s cancelled", job_id)
     return {"job_id": job_id, "status": "cancelled"}

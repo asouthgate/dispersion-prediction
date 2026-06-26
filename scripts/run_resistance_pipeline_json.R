@@ -47,20 +47,12 @@ if (is.null(n_circles)) {
 
 lamps_raw <- inputs$lamps
 if (is.null(lamps_raw) || length(lamps_raw) == 0) {
-    set.seed(42)
-    n_lamps <- 10
-    lamps <- data.frame(
-        x = runif(n_lamps, roost_bng$easting - roost_bng$radius + 50, roost_bng$easting + roost_bng$radius - 50),
-        y = runif(n_lamps, roost_bng$northing - roost_bng$radius + 50, roost_bng$northing + roost_bng$radius - 50),
-        z = runif(n_lamps, 2, 15)
-    )
-    logger::log_info("Generated %d random lamps (seed=42)", nrow(lamps))
+    lamps <- data.frame(x = numeric(0), y = numeric(0), z = numeric(0))
 } else {
     lamps <- as.data.frame(do.call(rbind, lapply(lamps_raw, as.numeric)))
     colnames(lamps) <- c("x", "y", "z")
     logger::log_info("Using %d lamps from input", nrow(lamps))
 }
-logger::log_info("Lamp coords: x=[%.1f..%.1f] y=[%.1f..%.1f]", min(lamps$x), max(lamps$x), min(lamps$y), max(lamps$y))
 
 logger::log_info("Creating algorithm parameters...")
 algorithm_parameters <- AlgorithmParameters$new(

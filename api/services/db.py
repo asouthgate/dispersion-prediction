@@ -21,30 +21,6 @@ def get_db_connection():
     )
 
 
-def fetch_vectors(extent: tuple[float, float, float, float], types: list[str]) -> dict[str, Any]:
-    """Fetch vector data (roads, rivers, buildings) intersecting the extent."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        xmin, ymin, xmax, ymax = extent
-        results: dict[str, Any] = {}
-
-        for table in types:
-            query = f"""
-                SELECT ST_AsGeoJSON(ST_Transform(geom, 4326)) as geojson
-                FROM {table}
-                WHERE ST_Intersects(geom, ST_MakeEnvelope(%s, %s, %s, %s, 27700))
-                LIMIT 50000
-            """
-            cursor.execute(query, (xmin, ymin, xmax, ymax))
-            rows = cursor.fetchall()
-            results[table] = [row[0] for row in rows]
-
-        return results
-    finally:
-        conn.close()
-
-
 def _parse_wkb_raster(wkb: bytes) -> tuple[int, float | None, bytes]:
     """Parse WKB raster band and return (pixtype, nodata, pixel_data).
     

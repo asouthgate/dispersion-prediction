@@ -29,8 +29,12 @@ async def get_raster_png(job_id: str, layer: str):
 
         from services.raster_service import tif_to_png, get_bounds_for_tif
         os.makedirs(os.path.join(job_dir, "images"), exist_ok=True)
-        bounds = get_bounds_for_tif(tif_path)
-        tif_to_png(tif_path, png_path, bounds)
+        try:
+            bounds = get_bounds_for_tif(tif_path)
+            tif_to_png(tif_path, png_path, bounds)
+        except Exception as e:
+            logger.error("Failed to convert %s to PNG: %s", layer, e)
+            raise HTTPException(status_code=500, detail="Failed to render raster image")
 
     return FileResponse(
         png_path,
@@ -61,17 +65,21 @@ async def download_results(job_id: str):
     if not tif_files:
         raise HTTPException(status_code=404, detail="No result files found")
 
-    fd, zip_path = tempfile.mkstemp(suffix=".zip")
-    os.close(fd)
+    try:
+        fd, zip_path = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fp in tif_files:
-            arcname = os.path.relpath(fp, job_dir)
-            zf.write(fp, arcname)
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for fp in tif_files:
+                arcname = os.path.relpath(fp, job_dir)
+                zf.write(fp, arcname)
 
-    return FileResponse(
-        zip_path,
-        media_type="application/zip",
-        filename="results.zip",
-        headers={"Content-Disposition": "attachment; filename=results.zip"},
-    )
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename="results.zip",
+            headers={"Content-Disposition": "attachment; filename=results.zip"},
+        )
+    except Exception as e:
+        logger.error("Failed to create ZIP for job %s: %s", job_id, e)
+        raise HTTPException(status_code=500, detail="Failed to create results archive")

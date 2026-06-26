@@ -54,4 +54,5 @@ class JobStatus(BaseModel):
     progress: float
     progress_label: str
     error: str | None = None
+    warnings: list[str] = Field(default_factory=list)
     layers: list[ResultLayerInfo] | None = None

@@ -39,6 +39,7 @@ interface JobStatus {
   progress: number;
   progress_label: string;
   error: string | null;
+  warnings: string[];
   layers?: { id: string; url: string; bounds: [number, number, number, number] }[];
 }
 
@@ -92,7 +93,8 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
       const roost = selectRoost(ctx.features);
       if (!roost) {
-        ctx.onLog?.('warning', 'No Roost circle drawn — place a roost first.');
+        ctx.onLog?.('error', 'No Roost circle drawn — place a roost first.');
+        throw new Error('No roost defined. Place a roost on the map first.');
       }
       const features = ctx.features
         .filter((f) => f.category !== 'Lights') // lamps sent separately
@@ -105,11 +107,6 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
       const { stage, roost, features, lamps, params } = ctx.payload as PipelinePayload;
-
-      if (!roost) {
-        ctx.onLog?.('error', 'No roost defined. Place a roost on the map first.');
-        return { layers: [] as ResultLayerEntry[], summary: { error: 'No roost defined' } };
-      }
 
       ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features · ${lamps.length} lamps`);
 
@@ -132,7 +129,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
       signal.addEventListener('abort', onAbort, { once: true });
 
       try {
-        let job: JobStatus = { job_id, status: 'pending', progress: 0, progress_label: '', error: null };
+        let job: JobStatus = { job_id, status: 'pending', progress: 0, progress_label: '', error: null, warnings: [] };
         for (let poll = 0; poll < MAX_POLLS; poll++) {
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           await delay(POLL_INTERVAL_MS, signal);
@@ -148,6 +145,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         }
 
         if (job.status === 'failed') {
+          ctx.onLog?.('error', job.error ?? 'Pipeline failed');
           throw new Error(job.error ?? 'Pipeline failed');
         }
         if (job.status === 'cancelled') {
@@ -159,6 +157,10 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
           id: l.id,
           envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
         }));
+
+        for (const w of job.warnings ?? []) {
+          ctx.onLog?.('warning', w);
+        }
 
         ctx.onProgress?.({ step: 'submit', fraction: 1, label: `${layers.length} layers` });
         return { layers, summary: { stage, layerCount: layers.length } };
