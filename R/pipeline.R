@@ -223,7 +223,7 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
 
     logger::log_info(paste("Combining extra lights to ", nrow(lamps), " if there are any."))
     print(nrow(lamps))
-    if (nrow(spdfs$lights) > 0) {
+    if (!is.null(spdfs$lights) && nrow(spdfs$lights) > 0) {
         lamps <- rbind(lamps, spdfs$lights)
     }
 
