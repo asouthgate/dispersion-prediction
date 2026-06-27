@@ -23,9 +23,28 @@ save_image <- function(data, fname, working_dir) {
     logger::log_info(paste("Saving", savepath))
     tryCatch(
         {
-            png(savepath)
-            plot(data, axes=TRUE)
-            dev.off()
+            vals <- raster::values(data)
+            nona <- is.finite(vals)
+            if (sum(nona) == 0) {
+                logger::log_warn(paste("All NA values in", fname))
+                return(invisible())
+            }
+            library(png)
+            vmin <- min(vals[nona])
+            vmax <- max(vals[nona])
+            if (vmax == vmin) vmax <- vmin + 1
+            idx <- floor((vals - vmin) / (vmax - vmin) * 254) + 1
+            idx[!nona] <- NA_integer_
+            col_rgb <- col2rgb(terrain.colors(255)) / 255
+            rgba <- array(0, dim = c(nrow(data), ncol(data), 4))
+            ncells <- nrow(data) * ncol(data)
+            for (b in 1:3) {
+                layer <- numeric(ncells)
+                layer[nona] <- col_rgb[b, idx[nona]]
+                rgba[,,b] <- matrix(layer, nrow(data), ncol(data), byrow = TRUE)
+            }
+            rgba[,,4] <- matrix(as.numeric(nona), nrow(data), ncol(data), byrow = TRUE)
+            writePNG(rgba, savepath)
         },
         error = function(err) {
             logger::log_warn(paste("Failed to plot and save:", err$message))

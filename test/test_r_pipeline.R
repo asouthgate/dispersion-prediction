@@ -40,7 +40,7 @@ logger::log_info("Database: %s@%s:%s/%s", db_user, db_host, db_port, db_name)
 test_that("Resistance pipeline produces expected output layers", {
 
     resolution <- 10
-    roost_bng <- list(x = 287500, y = 74500)
+    roost_bng <- list(x = 287500, y = 77500)
     radius <- 500
 
     logger::log_info("Creating algorithm parameters...")
@@ -113,7 +113,7 @@ test_that("Resistance pipeline produces expected output layers", {
     expect_true("disk" %in% names(base_inputs))
 
     logger::log_info("Computing resistance rasters...")
-    resistance_maps <- cal_resistance_rasters(algorithm_parameters, working_dir, base_inputs, save_images = TRUE)
+    resistance_maps <- cal_resistance_rasters(algorithm_parameters, working_dir, base_inputs, save_images = FALSE)
 
     expected_layers <- c(
         "road_res", "river_res", "landscape_res", "linear_res",
@@ -137,6 +137,9 @@ test_that("Resistance pipeline produces expected output layers", {
     logger::log_info("All resistance layers produced successfully.")
 
     write_pipeline_outputs(resistance_maps, raster_inp, working_dir)
+
+    logger::log_info("Generating diagnostic plots...")
+    system(paste("Rscript --no-init-file test/plot_outputs.R", shQuote(working_dir)))
 
     for (layer_name in expected_layers) {
         expect_true(file.exists(file.path(working_dir, paste0(layer_name, ".tif"))),

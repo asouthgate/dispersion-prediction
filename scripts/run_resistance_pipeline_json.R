@@ -98,7 +98,7 @@ base_inputs <- suppressWarnings(
 )
 
 logger::log_info("Computing resistance rasters...")
-resistance_maps <- cal_resistance_rasters(algorithm_parameters, working_dir, base_inputs, save_images = TRUE)
+resistance_maps <- cal_resistance_rasters(algorithm_parameters, working_dir, base_inputs, save_images = FALSE)
 
 write_pipeline_outputs(resistance_maps, raster_inp, working_dir)
 

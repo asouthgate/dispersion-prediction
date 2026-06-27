@@ -9,7 +9,7 @@ import {
 } from '@gsbio/engine';
 import { OSM_RASTER_STYLE } from '@gsbio/engine';
 
-const CENTER: [number, number] = [-3.6, 50.604];
+const CENTER: [number, number] = [-3.590523, 50.586362];
 const ZOOM = 13;
 
 const TOOLS: Array<{ mode: DrawMode; label: string; icon: string; color: string }> = [

@@ -10,7 +10,6 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from services.raster_service import tif_to_png
 from schemas.pipeline import (
     PipelineRequest,
     PipelineStartResponse,
@@ -102,7 +101,7 @@ def _run_coverage_python(work_dir: str, roost: dict[str, Any] | None, resolution
     _write_input_files(work_dir, roost, [], [], {})
 
     from services.db import fetch_rasters
-    from services.raster_service import get_bounds_for_tif
+    from services.raster_service import get_bounds_for_tif, tif_to_png
 
     extent_bng = _compute_extent_from_roost(roost, resolution)
     logger.info("Fetching rasters for extent %s at resolution %g", extent_bng, resolution)
@@ -264,14 +263,19 @@ def _run_r_pipeline(work_dir: str, stage: str, roost: dict[str, Any] | None,
             "the database may not have raster data covering this location."
         )
 
+    plot_script = os.path.join(REPO_ROOT, "test", "plot_outputs.R")
+    if os.path.exists(plot_script):
+        logger.info("Generating diagnostic plots...")
+        subprocess.run(
+            ["Rscript", "--no-init-file", plot_script, work_dir],
+            cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+        )
+
     result_layers = []
     for layer in layers_raw:
         tif_path = layer["tif_path"]
-        png_name = f"{layer['id']}.png"
-        png_path = os.path.join(work_dir, "images", png_name)
         from services.raster_service import get_bounds_for_tif
         bounds = get_bounds_for_tif(tif_path)
-        tif_to_png(tif_path, png_path, bounds)
         result_layers.append({
             "id": layer["name"],
             "url": f"/api/rasters/{os.path.basename(work_dir)}/{layer['id']}.png",

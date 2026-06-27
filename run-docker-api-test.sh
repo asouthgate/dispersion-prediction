@@ -26,7 +26,7 @@ python3 test/run_api_test.py --api-base "$API_URL" --out "$OUTPUT_DIR"
 echo "=== Copying TIFs from container ==="
 JOB_ID=$(cat "$OUTPUT_DIR/.job_id" 2>/dev/null || echo "")
 if [ -n "$JOB_ID" ]; then
-    docker compose cp "api:/tmp/circuitscape/${JOB_ID}/" "./${OUTPUT_DIR}/"
+    docker compose cp "api:/tmp/circuitscape/${JOB_ID}/." "./${OUTPUT_DIR}/"
     echo "Copied job $JOB_ID files."
 else
     echo "WARNING: no job_id found, skipping file copy."

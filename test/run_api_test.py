@@ -19,10 +19,22 @@ POLL_INTERVAL = 2
 MAX_POLLS = 300
 
 TEST_ROOST = {
-    "lng": -3.589615,
-    "lat": 50.559394,
+    "lng": -3.590523,
+    "lat": 50.586362,
     "radiusMeters": 500,
 }
+TEST_LAMPS = [
+    {"x": 287873.325439147, "y": 77461.9675986236, "z": 13.75240803486668},
+    {"x": 287893.367871968, "y": 77697.2010264872, "z": 3.80323218042031},
+    {"x": 287307.525581308, "y": 77891.2050224375, "z": 14.85559247597121},
+    {"x": 287797.402863461, "y": 77279.8859419068, "z": 14.30668702325784},
+    {"x": 287627.570967004, "y": 77466.0635402892, "z": 3.07168825529516},
+    {"x": 287517.186354217, "y": 77896.0130704800, "z": 8.68475319654681},
+    {"x": 287712.929483177, "y": 77930.4037855472, "z": 7.07264507235959},
+    {"x": 287171.199937514, "y": 77155.7386254892, "z": 13.77459570183419},
+    {"x": 287641.293061362, "y": 77477.4973734049, "z": 7.81060516531579},
+    {"x": 287684.558305633, "y": 77554.2994716205, "z": 12.86805537994951},
+]
 RESOLUTION = 10.0
 
 
@@ -76,7 +88,7 @@ def main():
     payload = {
         "roost": TEST_ROOST,
         "features": [],
-        "lamps": [],
+        "lamps": TEST_LAMPS,
         "params": {"resolution": RESOLUTION},
     }
     try:
@@ -121,35 +133,36 @@ def main():
 
     print("  OK: Pipeline completed")
 
-    # 4. Download results
-    print(f"\n[4/4] Downloading results to {out_dir}/")
+    # 4. Download results via HTTP (validates API serving)
+    print(f"\n[4/4] Downloading results to {out_dir}/http/")
+    http_dir = os.path.join(out_dir, "http")
+    os.makedirs(http_dir, exist_ok=True)
     layers = job.get("layers", [])
     if not layers:
         print("  WARNING: No layers returned")
 
     for layer in layers:
-        layer_id = layer["id"]
         url = layer["url"]
         if not url.startswith("http"):
             url = f"{base}{url}"
 
-        fname = f"{layer_id}.png"
-        fpath = os.path.join(out_dir, fname)
+        fname = os.path.basename(url)
+        fpath = os.path.join(http_dir, fname)
 
         try:
             data = api_get_bytes(url)
             with open(fpath, "wb") as f:
                 f.write(data)
             size_kb = len(data) / 1024
-            print(f"  {layer_id:<25s} {size_kb:>6.1f} KB  ({layer['id']})")
+            print(f"  {fname:<30s} {size_kb:>6.1f} KB")
         except Exception as e:
-            print(f"  {layer_id:<25s} FAILED: {e}")
+            print(f"  {fname:<30s} FAILED: {e}")
 
-    # Download ZIP bundle (TIFs + PNGs)
+    # Download ZIP bundle
     print(f"\n  Downloading results.zip ...", end=" ")
     try:
         data = api_get_bytes(f"{base}/api/rasters/{job_id}/download")
-        zip_path = os.path.join(out_dir, "results.zip")
+        zip_path = os.path.join(http_dir, "results.zip")
         with open(zip_path, "wb") as f:
             f.write(data)
         print(f"OK ({len(data) / 1024:.1f} KB)")

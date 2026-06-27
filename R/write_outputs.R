@@ -6,12 +6,11 @@ write_pipeline_outputs <- function(resistance_maps, raster_inp, working_dir) {
     dir.create(file.path(working_dir, "images"), recursive = TRUE, showWarnings = FALSE)
 
     for (name in c("r_dsm", "r_dtm", "lcm_r")) {
-        rast <- raster_inp[[name]]
+            rast <- raster_inp[[name]]
         if (!is.null(rast) && inherits(rast, "RasterLayer")) {
             fname <- sub("^r_", "", name)
             tif_path <- file.path(working_dir, paste0(fname, ".tif"))
             raster::writeRaster(rast, tif_path, "GTiff", overwrite = TRUE)
-            save_image(rast, paste0(fname, ".png"), working_dir)
         }
     }
 
