@@ -12,7 +12,15 @@ router = APIRouter(prefix="/rasters", tags=["rasters"])
 
 def _get_job_dir(job_id: str) -> str:
     base = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
-    return os.path.join(base, job_id)
+    d = os.path.join(base, job_id)
+    if os.path.isdir(d):
+        return d
+    from .pipeline import _jobs, _lock
+    with _lock:
+        job = _jobs.get(job_id)
+    if job and job.get("work_dir"):
+        return job["work_dir"]
+    return d
 
 
 @router.get("/{job_id}/{layer}.png")
@@ -31,7 +39,7 @@ async def get_raster_png(job_id: str, layer: str):
         os.makedirs(os.path.join(job_dir, "images"), exist_ok=True)
         try:
             bounds = get_bounds_for_tif(tif_path)
-            tif_to_png(tif_path, png_path, bounds)
+            tif_to_png(tif_path, png_path, bounds, circular_mask=not layer.endswith("_clipped"))
         except Exception as e:
             logger.error("Failed to convert %s to PNG: %s", layer, e)
             raise HTTPException(status_code=500, detail="Failed to render raster image")

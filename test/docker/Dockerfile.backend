@@ -51,7 +51,7 @@ RUN Rscript -e "renv::restore(library = '/usr/local/lib/R/site-library')"
 
 RUN curl -fsSL https://install.julialang.org | sh -s -- -y
 ENV PATH="/root/.juliaup/bin:${PATH}"
-COPY test/docker/JuliaProject.toml test/docker/JuliaManifest.toml /opt/julia/
+COPY test/docker/JuliaProject.toml /opt/julia/
 RUN julia -e 'using Pkg; Pkg.activate("/opt/julia"); Pkg.instantiate()'
 
 COPY api/requirements.txt /tmp/

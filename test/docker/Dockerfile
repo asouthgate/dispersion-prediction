@@ -32,7 +32,6 @@ RUN ln -s /root/.juliaup/bin/julia /usr/local/bin/julia
 ENV _R_SHLIB_STRIP_=true
 
 COPY test/docker/JuliaProject.toml /srv/shiny-server/batApp/JuliaProject.toml
-COPY test/docker/JuliaManifest.toml /srv/shiny-server/batApp/JuliaManifest.toml
 
 WORKDIR /srv/shiny-server/batApp
 COPY .Rprofile.docker /srv/shiny-server/batApp/.Rprofile

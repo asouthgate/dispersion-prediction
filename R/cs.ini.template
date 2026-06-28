@@ -22,8 +22,8 @@ use_mask = False
 [Calculation options]
 low_memory_mode = False
 parallelize = False
-#solver = cholmod
-solver = cg+amg
+#solver = cg+amg
+solver = cholmod
 print_timings = False
 preemptive_memory_release = False
 print_rusages = False

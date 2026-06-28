@@ -1,5 +1,7 @@
 """Pipeline router: start jobs, poll status, cancel."""
 
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -34,6 +36,13 @@ def _create_work_dir(job_id: str) -> str:
     os.makedirs(os.path.join(work_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(work_dir, "circuitscape"), exist_ok=True)
     return work_dir
+
+
+def _payload_hash(roost: dict[str, Any] | None, features: list[dict[str, Any]], lamps: list[dict[str, Any]], params: dict[str, int | float]) -> str:
+    """Hash the pipeline payload to derive a cache-friendly work directory name."""
+    payload = {"roost": roost, "features": features, "lamps": lamps, "params": params}
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def _write_input_files(
@@ -312,12 +321,26 @@ def _run_in_background(job_id: str, work_dir: str, stage: str,
                 if job_id in _jobs:
                     _jobs[job_id]["progress_label"] = "Fetching coverage data..."
             layers, warnings = _run_coverage_python(work_dir, roost, resolution=resolution)
-        elif stage in ("resistance", "current"):
+        elif stage == "resistance":
             if not roost:
                 raise ValueError("No roost defined — place a roost on the map before running the pipeline.")
             with _lock:
                 if job_id in _jobs:
                     _jobs[job_id]["progress_label"] = "Computing resistance maps..."
+            layers, warnings = _run_r_pipeline(work_dir, stage, roost, features, lamps, params, _job_id=job_id)
+        elif stage == "current":
+            if not roost:
+                raise ValueError("No roost defined — place a roost on the map before running the pipeline.")
+            asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
+            if not os.path.exists(asc_path):
+                with _lock:
+                    if job_id in _jobs:
+                        _jobs[job_id]["progress_label"] = "Computing resistance maps..."
+                logger.info("Job %s: ASC files missing, running resistance pipeline first", job_id)
+                _run_r_pipeline(work_dir, "resistance", roost, features, lamps, params, _job_id=job_id)
+            with _lock:
+                if job_id in _jobs:
+                    _jobs[job_id]["progress_label"] = "Running Circuitscape current map..."
             layers, warnings = _run_r_pipeline(work_dir, stage, roost, features, lamps, params, _job_id=job_id)
         else:
             raise ValueError(f"Unknown pipeline stage: {stage}")
@@ -369,10 +392,21 @@ async def start_current(req: PipelineRequest):
 
 
 def _start_pipeline(stage: str, req: PipelineRequest) -> PipelineStartResponse:
-    job_id = str(uuid.uuid4()).replace("-", "_")
-    work_dir = _create_work_dir(job_id)
+    roost = req.roost.model_dump() if req.roost else None
+    features = [f.model_dump() for f in req.features]
+    lamps = [l.model_dump() for l in req.lamps]
+    params = dict(req.params)
 
-    logger.info("Job %s: created work dir %s", job_id, work_dir)
+    payload_dir = _payload_hash(roost, features, lamps, params)
+    base = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
+    work_dir = os.path.join(base, payload_dir)
+    os.makedirs(work_dir, exist_ok=True)
+    os.makedirs(os.path.join(work_dir, "images"), exist_ok=True)
+    os.makedirs(os.path.join(work_dir, "circuitscape"), exist_ok=True)
+
+    job_id = str(uuid.uuid4()).replace("-", "_")
+
+    logger.info("Job %s: work dir %s (hash=%s)", job_id, work_dir, payload_dir)
 
     with _lock:
         _jobs[job_id] = {
@@ -387,11 +421,6 @@ def _start_pipeline(stage: str, req: PipelineRequest) -> PipelineStartResponse:
             "work_dir": work_dir,
             "_proc": None,
         }
-
-    roost = req.roost.model_dump() if req.roost else None
-    features = [f.model_dump() for f in req.features]
-    lamps = [l.model_dump() for l in req.lamps]
-    params = dict(req.params)
 
     thread = threading.Thread(
         target=_run_in_background,

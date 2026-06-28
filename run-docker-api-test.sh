@@ -7,10 +7,10 @@ OUTPUT_DIR="tmp/api-output"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
-echo "=== Starting stack ==="
+echo "Starting stack"
 docker compose up -d
 
-echo "=== Waiting for API ($API_URL) ==="
+echo "Waiting for API ($API_URL)"
 for i in $(seq 1 30); do
     if curl -sf "$API_URL/api/health" > /dev/null 2>&1; then
         echo "API is ready."
@@ -20,20 +20,19 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-echo "=== Running API test ==="
-python3 test/run_api_test.py --api-base "$API_URL" --out "$OUTPUT_DIR"
+echo "Running resistance pipeline"
+python3 test/run_api_test.py --api-base "$API_URL" --out "$OUTPUT_DIR/resistance/"
 
-echo "=== Copying TIFs from container ==="
-JOB_ID=$(cat "$OUTPUT_DIR/.job_id" 2>/dev/null || echo "")
-if [ -n "$JOB_ID" ]; then
-    docker compose cp "api:/tmp/circuitscape/${JOB_ID}/." "./${OUTPUT_DIR}/"
-    echo "Copied job $JOB_ID files."
-else
-    echo "WARNING: no job_id found, skipping file copy."
-fi
+echo "Running current (circuitscape) pipeline"
+python3 test/test_api_cli.py --api-base "$API_URL" --stage current --out "$OUTPUT_DIR/current/"
 
-echo "=== Tearing down ==="
+echo "Copying outputs from container"
+# Results live in hash-based dirs: copy all job output dirs
+mkdir -p "$OUTPUT_DIR/container"
+docker compose cp "api:/tmp/circuitscape/." "./${OUTPUT_DIR}/container/" 2>/dev/null || echo "  (no circuitscape dirs to copy, results downloaded via HTTP above)"
+
+echo "Tearing down"
 docker compose down
 
-echo "=== Output in $OUTPUT_DIR/ ==="
+echo "Output in $OUTPUT_DIR/"
 ls -la "$OUTPUT_DIR/"

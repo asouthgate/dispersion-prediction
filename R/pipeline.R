@@ -410,9 +410,23 @@ call_circuitscape <- function(working_dir, save_images) {
     # Create the call string
     Sys.unsetenv("LD_LIBRARY_PATH")
     compute <- paste0("compute(\"", working_dir, "/cs.ini\")")
-    call <- paste0("julia -e 'using Circuitscape; ", compute, "'")
+    call <- paste0("julia --project=/opt/julia -e 'using Circuitscape; ", compute, "' 2>&1")
+    logger::log_info("Running: %s", call)
 
-    system(call)
+    rc <- system(call, intern = TRUE)
+    rc_status <- attr(rc, "status")
+    rc_code <- if (is.null(rc_status)) 0 else rc_status
+
+    if (rc_code != 0) {
+        msg <- sprintf("Circuitscape failed with exit code %d", rc_code)
+        logger::log_error(msg)
+        logger::log_error("--- Julia output follows ---")
+        writeLines(rc, stderr())
+        logger::log_error("--- end Julia output ---")
+        stop(msg)
+    }
+
+    logger::log_info("Circuitscape completed successfully")
 
     current = raster(paste0(working_dir, "/circuitscape/cs_out_curmap.asc"))
     logCurrent = log(current + 1)

@@ -1,7 +1,7 @@
 library(raster)
 library(logger)
 
-write_pipeline_outputs <- function(resistance_maps, raster_inp, working_dir) {
+write_pipeline_outputs <- function(resistance_maps, raster_inp, working_dir, disk = NULL) {
 
     dir.create(file.path(working_dir, "images"), recursive = TRUE, showWarnings = FALSE)
 
@@ -33,6 +33,18 @@ write_pipeline_outputs <- function(resistance_maps, raster_inp, working_dir) {
     if (!is.null(resistance_maps$lamp_res)) {
         log_path <- file.path(working_dir, "log_lamp_res.tif")
         raster::writeRaster(log(resistance_maps$lamp_res), log_path, "GTiff", overwrite = TRUE)
+    }
+
+    if (!is.null(disk) && inherits(disk, "RasterLayer") && !is.null(resistance_maps$total_res)) {
+        logger::log_info("Writing clipped total resistance rasters...")
+
+        tr <- resistance_maps$total_res
+        tr[is.na(disk)] <- NA
+        raster::writeRaster(tr, file.path(working_dir, "total_res_clipped.tif"), "GTiff", overwrite = TRUE)
+
+        ltr <- log(resistance_maps$total_res)
+        ltr[is.na(disk)] <- NA
+        raster::writeRaster(ltr, file.path(working_dir, "log_total_res_clipped.tif"), "GTiff", overwrite = TRUE)
     }
 
     n_total <- length(raster::values(resistance_maps$total_res))
