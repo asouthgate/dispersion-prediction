@@ -71,20 +71,67 @@ function featureToPayload(f: DataFeature): FeaturePayload {
   };
 }
 
-/** Extract lamp coordinates from features tagged with category 'Lamps'.
- *  Coordinates are taken from the Point geometry (lng, lat) — the API backend
- *  converts WGS84 → BNG. Height is read from feature.data.height if present. */
+const METRES_PER_DEG_LAT = 111_320;
+
+function approxMetres(dlat: number, dlon: number, midLat: number): number {
+  const mPerDegLng = METRES_PER_DEG_LAT * Math.cos((midLat * Math.PI) / 180);
+  return Math.sqrt((dlat * METRES_PER_DEG_LAT) ** 2 + (dlon * mPerDegLng) ** 2);
+}
+
+function interpolateLineString(
+  coords: [number, number][],
+  height: number,
+  spacing: number,
+): { x: number; y: number; z: number }[] {
+  const lamps: { x: number; y: number; z: number }[] = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lng1, lat1] = coords[i];
+    const [lng2, lat2] = coords[i + 1];
+    const dlon = lng2 - lng1;
+    const dlat = lat2 - lat1;
+    const midLat = (lat1 + lat2) / 2;
+    const segLen = approxMetres(dlat, dlon, midLat);
+    const nPts = Math.max(1, Math.floor(segLen / spacing));
+    for (let pi = 1; pi <= nPts; pi++) {
+      const t = pi / nPts;
+      lamps.push({
+        x: lng1 + t * dlon,
+        y: lat1 + t * dlat,
+        z: height,
+      });
+    }
+  }
+  return lamps;
+}
+
+/** Extract lamp coordinates from features tagged with category 'Lights'
+ *  (Point features) and 'LightString' (LineString features interpolated
+ *  at the feature's spacing interval). Coordinates are in WGS84 — the API
+ *  backend converts WGS84 → BNG. */
 function extractLamps(features: ReadonlyArray<DataFeature>): { x: number; y: number; z: number }[] {
-  return features
-    .filter((f) => f.category === 'Lights' && f.geometryKind === 'point')
-    .map((f) => {
+  const lamps: { x: number; y: number; z: number }[] = [];
+
+  for (const f of features) {
+    if (f.category === 'Lights' && f.geometryKind === 'point') {
       const coords = (f.geojson.geometry as unknown as { coordinates: [number, number] }).coordinates;
-      return {
-        x: coords[0], // lng → sent as-is, backend converts to BNG easting
-        y: coords[1], // lat → sent as-is, backend converts to BNG northing
+      lamps.push({
+        x: coords[0],
+        y: coords[1],
         z: (f.data?.height as number) ?? (f.data?.z as number) ?? 0,
-      };
-    });
+      });
+    }
+
+    if (f.category === 'LightString' && f.geometryKind === 'linestring') {
+      const geom = f.geojson.geometry as unknown as { type: string; coordinates: [number, number][] };
+      const height = (f.data?.height as number) ?? 0;
+      const spacing = (f.data?.spacing as number) ?? 50;
+      if (geom.coordinates && geom.coordinates.length >= 2) {
+        lamps.push(...interpolateLineString(geom.coordinates, height, spacing));
+      }
+    }
+  }
+
+  return lamps;
 }
 
 export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Executor {
@@ -97,7 +144,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         throw new Error('No roost defined. Place a roost on the map first.');
       }
       const features = ctx.features
-        .filter((f) => f.category !== 'Lights') // lamps sent separately
+        .filter((f) => f.category !== 'Lights' && f.category !== 'LightString')
         .map(featureToPayload);
       const lamps = extractLamps(ctx.features);
       const params = { ...ctx.params };

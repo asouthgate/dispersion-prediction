@@ -91,8 +91,66 @@ if (raster_inp$raster_failed) {
     logger::log_warn("Some raster data failed to load - coverage may be incomplete")
 }
 
-logger::log_info("Post-processing inputs...")
+logger::log_info("Reading drawn features from GeoPackage files...")
 spdfs <- list(buildings = NULL, roads = NULL, rivers = NULL, lights = NULL)
+
+read_gpkg_if_exists <- function(cat, working_dir) {
+    gpkg_path <- file.path(working_dir, paste0("drawn_", tolower(cat), ".gpkg"))
+    if (!file.exists(gpkg_path)) {
+        logger::log_debug("No drawn %s GPKG found at %s", cat, gpkg_path)
+        return(NULL)
+    }
+    logger::log_info("Reading drawn %s from %s", cat, gpkg_path)
+    sf_obj <- sf::st_read(gpkg_path, quiet = TRUE)
+    if (is.null(sf_obj) || nrow(sf_obj) == 0) return(NULL)
+    return(sf_obj)
+}
+
+for (cat in c("Building", "Road", "River", "Lights", "LightString")) {
+    sf_obj <- read_gpkg_if_exists(cat, working_dir)
+    if (is.null(sf_obj)) next
+
+    if (cat == "Lights") {
+        coords <- sf::st_coordinates(sf_obj)
+        z_vals <- if ("height" %in% colnames(sf_obj)) sf_obj$height else rep(0, nrow(coords))
+        extra_lamps <- data.frame(x = coords[, "X"], y = coords[, "Y"], z = z_vals)
+        logger::log_info("Adding %d lights from GPKG", nrow(extra_lamps))
+        lamps <- rbind(lamps, extra_lamps)
+    } else if (cat == "LightString") {
+        extra_lamps <- list()
+        for (fi in seq_len(nrow(sf_obj))) {
+            feat <- sf_obj[fi, ]
+            feat_coords <- sf::st_coordinates(feat)
+            nc <- nrow(feat_coords)
+            if (nc < 2) next
+            h <- if ("height" %in% colnames(feat)) feat$height[1] else 0
+            sp <- if ("spacing" %in% colnames(feat)) feat$spacing[1] else 50
+            for (seg in seq_len(nc - 1)) {
+                x1 <- feat_coords[seg, "X"]; y1 <- feat_coords[seg, "Y"]
+                x2 <- feat_coords[seg + 1, "X"]; y2 <- feat_coords[seg + 1, "Y"]
+                dx <- x2 - x1; dy <- y2 - y1
+                seg_len <- sqrt(dx^2 + dy^2)
+                n_points <- max(1, floor(seg_len / sp))
+                for (pi in seq_len(n_points)) {
+                    t <- pi / n_points
+                    extra_lamps[[length(extra_lamps) + 1]] <- c(x1 + t * dx, y1 + t * dy, h)
+                }
+            }
+        }
+        if (length(extra_lamps) > 0) {
+            extra_df <- as.data.frame(do.call(rbind, extra_lamps))
+            colnames(extra_df) <- c("x", "y", "z")
+            logger::log_info("Adding %d lights interpolated from LightString GPKG", nrow(extra_df))
+            lamps <- rbind(lamps, extra_df)
+        }
+    } else {
+        sp_obj <- as(sf_obj, "Spatial")
+        spdfs[[cat]] <- sp_obj
+        logger::log_info("Added %d drawn %s features", nrow(sf_obj), cat)
+    }
+}
+
+logger::log_info("Post-processing inputs...")
 base_inputs <- suppressWarnings(
     postprocess_inputs(algorithm_parameters, groundrast, vector_inp, raster_inp, working_dir, lamps, spdfs)
 )

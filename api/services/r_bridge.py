@@ -1,5 +1,6 @@
 """R bridge: calls existing R pipeline scripts via subprocess."""
 
+import copy
 import json
 import os
 import subprocess
@@ -24,8 +25,37 @@ def wgs84_to_bng(lng: float, lat: float) -> tuple[float, float]:
     return easting, northing
 
 
-def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str) -> None:
-    """Write a GeoJSON dict to a GeoPackage file using fiona."""
+def _transform_coords_wgs84_to_bng(obj: Any) -> Any:
+    """Recursively transform all [lng, lat] coordinate pairs in a GeoJSON-like
+    structure from WGS84 (EPSG:4326) to BNG (EPSG:27700).  Returns a new object
+    leaving the original untouched."""
+    if isinstance(obj, list):
+        if (len(obj) == 2
+                and isinstance(obj[0], (int, float))
+                and isinstance(obj[1], (int, float))
+                and -180 <= float(obj[0]) <= 180
+                and -90 <= float(obj[1]) <= 90):
+            easting, northing = _transformer.transform(float(obj[0]), float(obj[1]))
+            return [easting, northing]
+        return [_transform_coords_wgs84_to_bng(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: _transform_coords_wgs84_to_bng(v) for k, v in obj.items()}
+    return obj
+
+
+_CATEGORY_PROPERTY_FIELDS: dict[str, dict[str, str]] = {
+    "Building": {"height": "float"},
+    "Road": {},
+    "River": {},
+    "Lights": {"height": "float"},
+    "LightString": {"height": "float", "spacing": "float"},
+}
+
+
+def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str,
+                           prop_schema: dict[str, str] | None = None) -> None:
+    """Write a GeoJSON dict to a GeoPackage file using fiona, with geometry
+    already in BNG.  Set the output CRS to EPSG:27700."""
     import fiona
 
     features = []
@@ -42,11 +72,16 @@ def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str) -> No
         return
 
     geom_type = features[0]["geometry"]["type"]
-    schema = {"geometry": geom_type, "properties": {}}
+    if prop_schema is None:
+        prop_schema = {}
+    schema: dict[str, Any] = {"geometry": geom_type, "properties": prop_schema}
 
-    with fiona.open(path, "w", driver="GPKG", schema=schema, crs=WGS84, layer=layer) as dst:
+    with fiona.open(path, "w", driver="GPKG", schema=schema, crs=BNG, layer=layer) as dst:
         for feat in features:
-            dst.write({"geometry": feat["geometry"], "properties": {}})
+            props = feat.get("properties", {})
+            write_props = {k: props.get(k, 0.0 if prop_schema.get(k) == "float" else None)
+                           for k in prop_schema}
+            dst.write({"geometry": feat["geometry"], "properties": write_props})
 
 
 def _write_input_files(
@@ -59,8 +94,9 @@ def _write_input_files(
     """Write pipeline input files to the working directory.
 
     Creates:
-      - inputs.json: roost (BNG), params, lamps
-      - drawn_buildings.gpkg / drawn_roads.gpkg / drawn_rivers.gpkg / drawn_lights.gpkg
+      - inputs.json: roost (BNG), params, lamps (BNG)
+      - drawn_building.gpkg / drawn_road.gpkg / drawn_river.gpkg /
+        drawn_lights.gpkg / drawn_lightstring.gpkg  (all in BNG)
     """
     # Convert roost to BNG
     roost_bng = None
@@ -71,6 +107,13 @@ def _write_input_files(
             "northing": northing,
             "radius": roost.get("radiusMeters", roost.get("radius_meters", 2500)),
         }
+
+    # Convert lamp coordinates from WGS84 to BNG
+    lamps_bng = []
+    for lamp in lamps:
+        easting, northing = wgs84_to_bng(lamp["x"], lamp["y"])
+        lamps_bng.append({"x": easting, "y": northing, "z": lamp.get("z", 0)})
+    logger.info("Converted %d lamps from WGS84 to BNG", len(lamps_bng))
 
     # Classify features by category
     by_category: dict[str, list[dict[str, Any]]] = {
@@ -88,32 +131,39 @@ def _write_input_files(
         elif cat == "Roost":
             pass  # roost handled separately
 
-    # Write GeoPackage files per category
+    # Write GeoPackage files per category (geometries transformed to BNG)
     for cat, feats in by_category.items():
         if not feats:
             continue
         geojson_features = []
+        prop_schema = _CATEGORY_PROPERTY_FIELDS.get(cat, {})
         for f in feats:
             gj = f.get("geojson", {})
             if gj.get("type") == "Feature":
-                gj = {"type": "Feature", **gj}
-                # Inject height/spacing from data
-                extra = f.get("data", {})
-                if extra:
-                    gj.setdefault("properties", {})
-                    gj["properties"].update(extra)
-                geojson_features.append(gj)
+                gj = copy.deepcopy(gj)
+            elif gj.get("type") in ("Point", "LineString", "Polygon",
+                                    "MultiPoint", "MultiLineString", "MultiPolygon"):
+                gj = {"type": "Feature", "geometry": copy.deepcopy(gj), "properties": {}}
+            else:
+                continue
+            extra = f.get("data", {})
+            if extra:
+                gj.setdefault("properties", {})
+                gj["properties"].update(extra)
+            gj["geometry"] = _transform_coords_wgs84_to_bng(gj["geometry"])
+            geojson_features.append(gj)
 
         if geojson_features:
             fc = {"type": "FeatureCollection", "features": geojson_features}
             gpkg_path = os.path.join(work_dir, f"drawn_{cat.lower()}.gpkg")
-            _geojson_to_geopackage(fc, gpkg_path, cat.lower())
+            _geojson_to_geopackage(fc, gpkg_path, cat.lower(),
+                                   prop_schema=prop_schema)
 
-    # Write JSON input file
+    # Write JSON input file (everything in BNG)
     input_data = {
         "roost": roost_bng,
         "params": params,
-        "lamps": lamps,
+        "lamps": lamps_bng,
     }
     with open(os.path.join(work_dir, "inputs.json"), "w") as f:
         json.dump(input_data, f, indent=2)
@@ -135,7 +185,7 @@ def run_pipeline(
 
     r_script_map = {
         "coverage": "scripts/run_coverage_pipeline.R",
-        "resistance": "scripts/run_resistance_pipeline.R",
+        "resistance": "scripts/run_resistance_pipeline_json.R",
         "current": "scripts/run_circuitscape.R",
     }
 

@@ -8,19 +8,34 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float, float, float]] = None) -> tuple[int, int, tuple[float, float, float, float]]:
+def _apply_circular_mask(rgba: "np.ndarray") -> "np.ndarray":
+    """Clip an RGBA image array to a circle inscribed in the rectangle.
+    Pixels outside the circle get alpha=0."""
+    import numpy as np
+    height, width = rgba.shape[:2]
+    cy = height / 2.0
+    cx = width / 2.0
+    radius = min(width, height) / 2.0
+    y, x = np.ogrid[:height, :width]
+    mask = (x - cx) ** 2 + (y - cy) ** 2 > radius ** 2
+    rgba[mask, 3] = 0
+    return rgba
+
+
+def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float, float, float]] = None,
+               circular_mask: bool = True) -> tuple[int, int, tuple[float, float, float, float]]:
     """Convert a GeoTIFF to PNG, returning (width, height, bounds).
 
     Returns bounds as [west, south, east, north] in EPSG:4326.
+    When circular_mask is True, the image is clipped to a circle
+    inscribed in the bounding box (matching the roost radius).
     """
     import rasterio
 
     with rasterio.open(tif_path) as src:
-        # Get bounds in source CRS (BNG)
         left, bottom, right, top = src.bounds
 
         if bounds is None:
-            # Convert BNG bounds to WGS84
             from pyproj import Transformer
             transformer = Transformer.from_crs("EPSG:27700", "EPSG:4326", always_xy=True)
             west, south = transformer.transform(left, bottom)
@@ -29,7 +44,6 @@ def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float
 
         data = src.read(1)
 
-        # Normalize to 0-255 for PNG
         import numpy as np
         nodata_val = src.nodata
         if nodata_val is not None:
@@ -48,15 +62,16 @@ def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float
 
         normalized = np.clip((data - vmin) / (vmax - vmin) * 255, 0, 255).astype(np.uint8)
 
-        # Apply inferno colormap for resistance/current maps
         from matplotlib import colormaps
         cmap = colormaps.get_cmap("inferno")
         rgba = cmap(normalized / 255.0)
         rgba = (rgba * 255).astype(np.uint8)
 
-        # Set nodata pixels to transparent
         if valid is not None:
             rgba[~valid, 3] = 0
+
+        if circular_mask:
+            _apply_circular_mask(rgba)
 
         import numpy
         height, width = data.shape

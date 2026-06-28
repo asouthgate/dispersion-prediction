@@ -1,12 +1,10 @@
-import { useFeatures, useDataSources } from '@gsbio/engine';
-import type { DataFeature, DataSourceDef } from '@gsbio/engine';
+import { useFeatures } from '@gsbio/engine';
+import type { DataFeature } from '@gsbio/engine';
 
 const CATEGORY_OPTIONS = ['Building', 'Road', 'River', 'Lights', 'LightString', 'Lamps'];
 
-function FeatureCard({ id }: { id: string; isFileSource: boolean }) {
+function FeatureCard({ feature }: { feature: DataFeature }) {
   const { state, updateFeature, selectFeature, removeFeature, toggleVisibility } = useFeatures();
-  const feature = state.features.find((f: DataFeature) => f.id === id);
-  if (!feature) return null;
 
   if (feature.category === 'Roost') {
     return (
@@ -118,41 +116,23 @@ function FeatureCard({ id }: { id: string; isFileSource: boolean }) {
   );
 }
 
-function SourceBlock({ source }: { source: DataSourceDef }) {
+export function FeaturePanel() {
   const { state } = useFeatures();
-  const features = state.features.filter((f: DataFeature) => source.featureIds.includes(f.id));
-  const isUpload = source.kind === 'upload';
+  const features = state.features;
 
   if (features.length === 0) {
     return (
-      <div className="data-source-block">
-        <div className="data-source-header">
-          <span className="data-source-name">{source.name}</span>
-          <span className="data-source-kind">{source.kind}</span>
-        </div>
-        <p className="hint">Use the toolbar above the map to draw features.</p>
+      <div className="feature-panel">
+        <p className="hint">Use the toolbar above the map to draw features, or import lamps from the Street Lights section.</p>
       </div>
     );
   }
 
   return (
-    <div className="data-source-block">
-      <div className="data-source-header">
-        <span className="data-source-name">{source.name}</span>
-        <span className="data-source-kind">{source.kind}</span>
-      </div>
-      <div className="data-feature-list">
-        {features.map((f: DataFeature) => <FeatureCard key={f.id} id={f.id} isFileSource={isUpload} />)}
-      </div>
-    </div>
-  );
-}
-
-export function FeaturePanel() {
-  const { sources } = useDataSources();
-  return (
     <div className="feature-panel">
-      {sources.map((source) => <SourceBlock key={source.id} source={source} />)}
+      <div className="data-feature-list">
+        {features.map((f) => <FeatureCard key={f.id} feature={f} />)}
+      </div>
     </div>
   );
 }
