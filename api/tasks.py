@@ -23,7 +23,7 @@ from services.r_bridge import _write_input_files as wif, collect_results
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO_ROOT = os.environ.get("REPO_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
 def _terminate_group(proc: subprocess.Popen) -> None:
@@ -49,11 +49,10 @@ def _create_work_dir(job_id: str) -> str:
 def _payload_hash(
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
-    lamps: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> str:
     """Hash the pipeline payload to derive a cache-friendly work directory name."""
-    payload = {"roost": roost, "features": features, "lamps": lamps, "params": params}
+    payload = {"roost": roost, "features": features, "params": params}
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -62,7 +61,6 @@ def _write_input_files(
     work_dir: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
-    lamps: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> None:
 
@@ -78,7 +76,6 @@ def _write_input_files(
     input_data = {
         "roost": roost_bng,
         "params": params,
-        "lamps": lamps,
         "feature_count": len(features),
     }
     with open(os.path.join(work_dir, "inputs.json"), "w") as f:
@@ -117,7 +114,7 @@ def _run_coverage_python(
     if not roost:
         raise ValueError("No roost provided — cannot compute coverage extent")
 
-    _write_input_files(work_dir, roost, [], [], {})
+    _write_input_files(work_dir, roost, [], {})
 
 
     extent_bng = _compute_extent_from_roost(roost, resolution)
@@ -197,7 +194,6 @@ def _run_r_pipeline(
     stage: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
-    lamps: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Run an R pipeline script via subprocess.
@@ -211,7 +207,7 @@ def _run_r_pipeline(
     if not available:
         raise RuntimeError(err_msg)
 
-    wif(work_dir, roost, features, lamps, params)
+    wif(work_dir, roost, features, params)
 
     r_script_map = {
         "resistance": "scripts/run_resistance_pipeline_json.R",
@@ -328,16 +324,15 @@ def run_pipeline_task(
     work_dir: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
-    lamps: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> dict[str, Any]:
     """Execute a pipeline stage and return its result layers + warnings."""
     t0 = time.monotonic()
     resolution = params.get("resolution", 10)
-    logger.info("Job %s: starting %s pipeline (resolution=%.0f, roost=%s, features=%d, lamps=%d)",
+    logger.info("Job %s: starting %s pipeline (resolution=%.0f, roost=%s, features=%d)",
                 self.request.id, stage, resolution,
                 f"({roost['lng']:.4f},{roost['lat']:.4f} r={roost.get('radiusMeters',2500)})" if roost else "none",
-                len(features), len(lamps))
+                len(features))
 
     def _progress(label: str) -> None:
         self.update_state(state="PROGRESS", meta={"label": label})
@@ -354,7 +349,7 @@ def run_pipeline_task(
             if not roost:
                 raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
             _progress("Computing resistance maps...")
-            layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, lamps, params)
+            layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
         elif stage == "current":
             if not roost:
                 raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
@@ -362,9 +357,9 @@ def run_pipeline_task(
             if not os.path.exists(asc_path):
                 _progress("Computing resistance maps...")
                 logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
-                _run_r_pipeline(self, work_dir, "resistance", roost, features, lamps, params)
+                _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
             _progress("Running Circuitscape current map...")
-            layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, lamps, params)
+            layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
         else:
             raise ValueError(f"Unknown pipeline stage: {stage}")
 

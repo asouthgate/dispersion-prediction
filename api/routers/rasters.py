@@ -4,6 +4,8 @@ import os
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+import tempfile
+import zipfile
 
 logger = logging.getLogger(__name__)
 
@@ -50,19 +52,15 @@ async def download_results(job_id: str):
     if not os.path.isdir(job_dir):
         raise HTTPException(status_code=404, detail="Job not found")
 
-    import tempfile
-    import zipfile
-
-    # Collect all TIF files
-    tif_files = []
+    results_files = []
     for f in sorted(os.listdir(job_dir)):
         if f.endswith(".tif"):
-            tif_files.append(os.path.join(job_dir, f))
+            results_files.append(os.path.join(job_dir, f))
     for f in sorted(os.listdir(os.path.join(job_dir, "images"))):
         if f.endswith(".png"):
-            tif_files.append(os.path.join(job_dir, "images", f))
+            results_files.append(os.path.join(job_dir, "images", f))
 
-    if not tif_files:
+    if not results_files:
         raise HTTPException(status_code=404, detail="No result files found")
 
     try:
@@ -70,7 +68,7 @@ async def download_results(job_id: str):
         os.close(fd)
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for fp in tif_files:
+            for fp in results_files:
                 arcname = os.path.relpath(fp, job_dir)
                 zf.write(fp, arcname)
 

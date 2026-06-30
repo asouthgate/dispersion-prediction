@@ -107,16 +107,13 @@ services:
       --loglevel=info
 
   frontend:
+    image: dispersion-prediction-app-frontend
     build:
       dockerfile: test/docker/Dockerfile.frontend
       additional_contexts:
         gsbio: ../gsbio-engine
     ports:
-      - "5180:5180"
-    depends_on:
-      - api
-    environment:
-      VITE_PROXY_API: http://api:8000
+      - "5180:80"
 
 volumes:
   pgdata:

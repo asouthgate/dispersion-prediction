@@ -29,7 +29,6 @@ interface PipelinePayload {
   stage: PipelineStage;
   roost: RoostInfo | null;
   features: FeaturePayload[];
-  lamps: { x: number; y: number; z: number }[];
   params: Record<string, number>;
 }
 
@@ -71,69 +70,6 @@ function featureToPayload(f: DataFeature): FeaturePayload {
   };
 }
 
-const METRES_PER_DEG_LAT = 111_320;
-
-function approxMetres(dlat: number, dlon: number, midLat: number): number {
-  const mPerDegLng = METRES_PER_DEG_LAT * Math.cos((midLat * Math.PI) / 180);
-  return Math.sqrt((dlat * METRES_PER_DEG_LAT) ** 2 + (dlon * mPerDegLng) ** 2);
-}
-
-function interpolateLineString(
-  coords: [number, number][],
-  height: number,
-  spacing: number,
-): { x: number; y: number; z: number }[] {
-  const lamps: { x: number; y: number; z: number }[] = [];
-  for (let i = 0; i < coords.length - 1; i++) {
-    const [lng1, lat1] = coords[i];
-    const [lng2, lat2] = coords[i + 1];
-    const dlon = lng2 - lng1;
-    const dlat = lat2 - lat1;
-    const midLat = (lat1 + lat2) / 2;
-    const segLen = approxMetres(dlat, dlon, midLat);
-    const nPts = Math.max(1, Math.floor(segLen / spacing));
-    for (let pi = 1; pi <= nPts; pi++) {
-      const t = pi / nPts;
-      lamps.push({
-        x: lng1 + t * dlon,
-        y: lat1 + t * dlat,
-        z: height,
-      });
-    }
-  }
-  return lamps;
-}
-
-/** Extract lamp coordinates from features tagged with category 'Lights'
- *  (Point features) and 'LightString' (LineString features interpolated
- *  at the feature's spacing interval). Coordinates are in WGS84 — the API
- *  backend converts WGS84 → BNG. */
-function extractLamps(features: ReadonlyArray<DataFeature>): { x: number; y: number; z: number }[] {
-  const lamps: { x: number; y: number; z: number }[] = [];
-
-  for (const f of features) {
-    if (f.category === 'Lights' && f.geometryKind === 'point') {
-      const coords = (f.geojson.geometry as unknown as { coordinates: [number, number] }).coordinates;
-      lamps.push({
-        x: coords[0],
-        y: coords[1],
-        z: (f.data?.height as number) ?? (f.data?.z as number) ?? 0,
-      });
-    }
-
-    if (f.category === 'LightString' && f.geometryKind === 'linestring') {
-      const geom = f.geojson.geometry as unknown as { type: string; coordinates: [number, number][] };
-      const height = (f.data?.height as number) ?? 0;
-      const spacing = (f.data?.spacing as number) ?? 50;
-      if (geom.coordinates && geom.coordinates.length >= 2) {
-        lamps.push(...interpolateLineString(geom.coordinates, height, spacing));
-      }
-    }
-  }
-
-  return lamps;
-}
-
 export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Executor {
   return {
     async preprocess(ctx, signal) {
@@ -143,24 +79,21 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         ctx.onLog?.('error', 'No Roost circle drawn — place a roost first.');
         throw new Error('No roost defined. Place a roost on the map first.');
       }
-      const features = ctx.features
-        .filter((f) => f.category !== 'Lights' && f.category !== 'LightString')
-        .map(featureToPayload);
-      const lamps = extractLamps(ctx.features);
+      const features = ctx.features.map(featureToPayload);
       const params = { ...ctx.params };
-      return { payload: { stage: getStage(), roost, features, lamps, params } };
+      return { payload: { stage: getStage(), roost, features, params } };
     },
 
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { stage, roost, features, lamps, params } = ctx.payload as PipelinePayload;
+      const { stage, roost, features, params } = ctx.payload as PipelinePayload;
 
-      ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features · ${lamps.length} lamps`);
+      ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features`);
 
       const startRes = await fetch(`${API_BASE}/pipeline/${stage}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roost, features, lamps, params }),
+        body: JSON.stringify({ roost, features, params }),
         signal,
       });
       if (!startRes.ok) throw new Error(`Failed to start pipeline: ${startRes.status}`);

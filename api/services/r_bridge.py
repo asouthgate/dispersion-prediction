@@ -1,13 +1,11 @@
 """R bridge: calls existing R pipeline scripts via subprocess."""
 
 import copy
+import fiona
 import json
 import os
 import subprocess
-import tempfile
-import shutil
 import logging
-from pathlib import Path
 from typing import Any
 
 from pyproj import Transformer
@@ -17,29 +15,28 @@ logger = logging.getLogger(__name__)
 WGS84 = "EPSG:4326"
 BNG = "EPSG:27700"
 
-_transformer = Transformer.from_crs(WGS84, BNG, always_xy=True)
+_default_transformer = Transformer.from_crs(WGS84, BNG, always_xy=True)
 
 
 def wgs84_to_bng(lng: float, lat: float) -> tuple[float, float]:
-    easting, northing = _transformer.transform(lng, lat)
+    easting, northing = _default_transformer.transform(lng, lat)
     return easting, northing
 
 
-def _transform_coords_wgs84_to_bng(obj: Any) -> Any:
-    """Recursively transform all [lng, lat] coordinate pairs in a GeoJSON-like
-    structure from WGS84 (EPSG:4326) to BNG (EPSG:27700).  Returns a new object
-    leaving the original untouched."""
+def _transform_coords_wgs84_to_bng(obj: Any, transformer: Transformer = _default_transformer) -> Any:
+    """Recursively transform all [lng, lat] coordinate pairs"""
     if isinstance(obj, list):
         if (len(obj) == 2
                 and isinstance(obj[0], (int, float))
                 and isinstance(obj[1], (int, float))
                 and -180 <= float(obj[0]) <= 180
                 and -90 <= float(obj[1]) <= 90):
-            easting, northing = _transformer.transform(float(obj[0]), float(obj[1]))
+            # Safe because the transformer is guaranteed to have always_xy=True
+            easting, northing = transformer.transform(float(obj[0]), float(obj[1]))
             return [easting, northing]
-        return [_transform_coords_wgs84_to_bng(item) for item in obj]
+        return [_transform_coords_wgs84_to_bng(item, transformer) for item in obj]
     if isinstance(obj, dict):
-        return {k: _transform_coords_wgs84_to_bng(v) for k, v in obj.items()}
+        return {k: _transform_coords_wgs84_to_bng(v, transformer) for k, v in obj.items()}
     return obj
 
 
@@ -56,7 +53,6 @@ def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str,
                            prop_schema: dict[str, str] | None = None) -> None:
     """Write a GeoJSON dict to a GeoPackage file using fiona, with geometry
     already in BNG.  Set the output CRS to EPSG:27700."""
-    import fiona
 
     features = []
     geom_type = None
@@ -84,17 +80,17 @@ def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str,
             dst.write({"geometry": feat["geometry"], "properties": write_props})
 
 
+
 def _write_input_files(
     work_dir: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
-    lamps: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> None:
     """Write pipeline input files to the working directory.
 
     Creates:
-      - inputs.json: roost (BNG), params, lamps (BNG)
+      - inputs.json: roost (BNG), params
       - drawn_building.gpkg / drawn_road.gpkg / drawn_river.gpkg /
         drawn_lights.gpkg / drawn_lightstring.gpkg  (all in BNG)
     """
@@ -107,13 +103,6 @@ def _write_input_files(
             "northing": northing,
             "radius": roost.get("radiusMeters", roost.get("radius_meters", 2500)),
         }
-
-    # Convert lamp coordinates from WGS84 to BNG
-    lamps_bng = []
-    for lamp in lamps:
-        easting, northing = wgs84_to_bng(lamp["x"], lamp["y"])
-        lamps_bng.append({"x": easting, "y": northing, "z": lamp.get("z", 0)})
-    logger.info("Converted %d lamps from WGS84 to BNG", len(lamps_bng))
 
     # Classify features by category
     by_category: dict[str, list[dict[str, Any]]] = {
@@ -159,11 +148,10 @@ def _write_input_files(
             _geojson_to_geopackage(fc, gpkg_path, cat.lower(),
                                    prop_schema=prop_schema)
 
-    # Write JSON input file (everything in BNG)
+    # Write JSON input file
     input_data = {
         "roost": roost_bng,
         "params": params,
-        "lamps": lamps_bng,
     }
     with open(os.path.join(work_dir, "inputs.json"), "w") as f:
         json.dump(input_data, f, indent=2)
@@ -173,15 +161,14 @@ def run_pipeline(
     stage: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
-    lamps: list[dict[str, Any]],
     params: dict[str, int | float],
     work_dir: str,
-) -> subprocess.Popen:
+) -> subprocess.CompletedProcess:
     """Launch the appropriate R pipeline script as a subprocess.
 
     Returns the Popen handle for monitoring.
     """
-    _write_input_files(work_dir, roost, features, lamps, params)
+    _write_input_files(work_dir, roost, features, params)
 
     r_script_map = {
         "coverage": "scripts/run_coverage_pipeline.R",
@@ -199,17 +186,24 @@ def run_pipeline(
     env["R_PIPELINE_WORKDIR"] = work_dir
     env["R_PIPELINE_INPUT"] = os.path.join(work_dir, "inputs.json")
 
-    proc = subprocess.Popen(
+    result = subprocess.run(
         ["Rscript", rscript_path, os.path.join(work_dir, "inputs.json")],
         cwd=work_dir,
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        capture_output=True,
         text=True,
+        check=False,
     )
 
-    return proc
+    if result.stdout:
+        logger.info(f"R Pipeline Output:\n{result.stdout}")
+    if result.stderr:
+        logger.error(f"R Pipeline Error Output:\n{result.stderr}")
 
+    if result.returncode != 0:
+        raise RuntimeError(f"R script failed with exit code {result.returncode}")
+
+    return result
 
 def collect_results(work_dir: str) -> list[dict[str, Any]]:
     """Collect result rasters from the working directory.

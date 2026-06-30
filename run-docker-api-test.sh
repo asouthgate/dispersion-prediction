@@ -7,6 +7,14 @@ OUTPUT_DIR="tmp/api-output"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
+echo "Building api image"
+docker build -t dispersion-prediction-app-api -f test/docker/Dockerfile.backend .
+
+echo "Building frontend image"
+docker build -t dispersion-prediction-app-frontend \
+  --build-context gsbio=../gsbio-engine \
+  -f test/docker/Dockerfile.frontend .
+
 echo "Starting stack"
 docker compose up -d
 

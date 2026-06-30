@@ -1,8 +1,13 @@
 """PostGIS database service for raster and vector data queries."""
 
+import os
 import logging
+import numpy as np
+import rasterio
 import struct
-from typing import Any
+from rasterio.transform import from_origin
+from psycopg2 import sql
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +45,10 @@ def _parse_wkb_raster(wkb: bytes) -> tuple[int, float | None, bytes]:
     endian = '<' if wkb[pos] == 1 else '>'
     pos += 1
 
-    version = struct.unpack_from(endian + 'H', wkb, pos)[0]
+    # Unused but here for stream advancement
+    _ = struct.unpack_from(endian + 'H', wkb, pos)[0]
     pos += 2
-
-    num_bands = struct.unpack_from(endian + 'H', wkb, pos)[0]
+    _ = struct.unpack_from(endian + 'H', wkb, pos)[0]
     pos += 2
 
     # Band header: 2 bytes of flags
@@ -66,7 +71,6 @@ def _parse_wkb_raster(wkb: bytes) -> tuple[int, float | None, bytes]:
     return pixtype, nodata, pixel_data
 
 
-# pixtype mapping
 PIXTYPE_DTYPE = {
     0: ('uint8', 1),     # 1BB
     1: ('uint16', 2),    # 2BUI
@@ -84,13 +88,48 @@ PIXTYPE_DTYPE = {
     14: ('float64', 8),  # 64BF
 }
 
+def _write_geotiff(out_path: str, row: tuple, resolution: float) -> bool:
+    """Processes raw WKB raster row data and writes it out as a GeoTIFF."""
+
+    width, height, ulx, uly, scalex, scaley, srid, wkb = row
+
+    if not width or not height or not wkb:
+        return False
+
+    pixtype, nodata, pixel_data = _parse_wkb_raster(bytes(wkb))
+    dtype_str, elem_size = PIXTYPE_DTYPE.get(pixtype, ('float32', 4))
+    expected_size = width * height * elem_size
+
+    if len(pixel_data) < expected_size:
+        logger.warning(f"Pixel data too small: got {len(pixel_data)}, expected {expected_size}")
+        return False
+
+    pixel_data = pixel_data[:expected_size]
+    arr = np.frombuffer(pixel_data, dtype=np.dtype(dtype_str)).reshape((height, width))
+    
+    if nodata is not None:
+        arr = np.where(arr == nodata, np.nan, arr)
+
+    transform = from_origin(
+        ulx, uly, 
+        abs(scalex) if scalex else resolution,
+        abs(scaley) if scaley else resolution
+    )
+    
+    profile = {
+        'driver': 'GTiff', 'width': width, 'height': height, 'count': 1,
+        'dtype': arr.dtype.name, 'crs': f'EPSG:{srid}' if srid else None,
+        'transform': transform, 'compress': 'LZW',
+    }
+    
+    with rasterio.open(out_path, 'w', **profile) as dst:
+        dst.write(arr, 1)
+        
+    return True
+
 
 def fetch_rasters(extent: tuple[float, float, float, float], resolution: float, work_dir: str) -> dict[str, str]:
     """Fetch raster data (DTM, DSM, LCM) from PostGIS and save as GeoTIFF."""
-    import numpy as np
-    import rasterio
-    from rasterio.transform import from_origin
-
     conn = get_db_connection()
     xmin, ymin, xmax, ymax = extent
     rasters: dict[str, str] = {}
@@ -98,11 +137,10 @@ def fetch_rasters(extent: tuple[float, float, float, float], resolution: float, 
     try:
         for table in ["dtm", "dsm", "lcm"]:
             try:
-                cursor = conn.cursor()
-                cursor.execute(f"""
+                query = sql.SQL("""
                     WITH merged AS (
                         SELECT ST_Union(rast) as rast
-                        FROM {table}
+                        FROM {table_name}
                         WHERE ST_Intersects(rast, ST_MakeEnvelope(%s, %s, %s, %s, 27700))
                     ),
                     clipped AS (
@@ -119,47 +157,20 @@ def fetch_rasters(extent: tuple[float, float, float, float], resolution: float, 
                            ST_SRID(rast),
                            ST_AsBinary(ST_Band(rast, 1))
                     FROM resampled
-                """, (xmin, ymin, xmax, ymax, xmin, ymin, xmax, ymax, resolution, resolution))
+                """).format(table_name=sql.Identifier(table))
 
-                row = cursor.fetchone()
-                cursor.close()
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (xmin, ymin, xmax, ymax, xmin, ymin, xmax, ymax, resolution, resolution))
+                    row = cursor.fetchone()
+
                 if not row:
                     continue
 
-                width, height = row[0], row[1]
-                ulx, uly = row[2], row[3]
-                scalex, scaley = row[4], row[5]
-                srid = row[6]
-                wkb = row[7]
-
-                if not width or not height or not wkb:
-                    continue
-
-                pixtype, nodata, pixel_data = _parse_wkb_raster(bytes(wkb))
-                dtype_str, elem_size = PIXTYPE_DTYPE.get(pixtype, ('float32', 4))
-                expected_size = width * height * elem_size
-
-                if len(pixel_data) < expected_size:
-                    logger.warning(f"Pixel data too small for {table}: got {len(pixel_data)}, expected {expected_size}")
-                    continue
-
-                pixel_data = pixel_data[:expected_size]
-                arr = np.frombuffer(pixel_data, dtype=np.dtype(dtype_str)).reshape((height, width))
-                if nodata is not None:
-                    arr = np.where(arr == nodata, np.nan, arr)
-
-                out_path = f"{work_dir}/{table}.tif"
-                transform = from_origin(ulx, uly, abs(scalex) if scalex else resolution,
-                                        abs(scaley) if scaley else resolution)
-                profile = {
-                    'driver': 'GTiff', 'width': width, 'height': height, 'count': 1,
-                    'dtype': arr.dtype.name, 'crs': f'EPSG:{srid}' if srid else None,
-                    'transform': transform, 'compress': 'LZW',
-                }
-                with rasterio.open(out_path, 'w', **profile) as dst:
-                    dst.write(arr, 1)
-
-                rasters[table] = out_path
+                out_path = os.path.join(work_dir, f"{table}.tif")
+                
+                # Call the new helper function to process and save
+                if _write_geotiff(out_path, row, resolution):
+                    rasters[table] = out_path
 
             except Exception as e:
                 conn.rollback()

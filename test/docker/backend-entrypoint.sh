@@ -30,5 +30,10 @@ echo "generating ~/.bats.cfg..."
 envsubst < /opt/bats.cfg.template > ~/.bats.cfg
 echo "done."
 
+if [ "$#" -gt 0 ]; then
+    echo "starting: $*"
+    exec "$@"
+fi
+
 echo "starting uvicorn..."
 exec python3 -m uvicorn main:app --app-dir /app/api --host 0.0.0.0 --port 8000

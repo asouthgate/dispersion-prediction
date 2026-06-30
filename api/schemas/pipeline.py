@@ -25,16 +25,9 @@ class FeaturePayload(BaseModel):
         populate_by_name = True
 
 
-class LampEntry(BaseModel):
-    x: float
-    y: float
-    z: float
-
-
 class PipelineRequest(BaseModel):
     roost: RoostInput | None
     features: list[FeaturePayload] = Field(default_factory=list)
-    lamps: list[LampEntry] = Field(default_factory=list)
     params: dict[str, int | float] = Field(default_factory=dict)
 
 
