@@ -1,1 +1,1 @@
-options(shiny.autoload.r=FALSE)
+source("renv/activate.R")

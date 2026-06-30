@@ -1,5 +1,5 @@
-Package: shiny-bat-dispersion
-Title: Shiny app for modelling bat flight lines on a map
+Package: horseshoe-dispersion
+Title: App for modelling bat flight lines on a map
 Description: 
 Version: 0.1
 Author: AJ Southgate (southgateJA@cardiff.ac.uk)
@@ -23,10 +23,6 @@ Imports:
     raster,
     rpostgis,
     sf,
-    shiny,
-    shinyBS,
-    shinybusy,
-    shinyjs,
     sp,
     stringr,
     terra,

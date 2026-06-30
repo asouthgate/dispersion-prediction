@@ -3,7 +3,6 @@
 This repository contains the code that implements the *Predicting bat dispersion through urban environments* project. It now has two interfaces:
 
 - **React + FastAPI** (new) — a TypeScript/React frontend using the `gsbio-engine` for map drawing and a FastAPI Python backend that calls the existing R pipeline as a subprocess.
-- **Shiny** (legacy) — the original R Shiny app.
 
 Most of the calculations are performed by [R](https://www.r-project.org) to set up the inputs to the [Circuitscape](https://docs.circuitscape.org/Circuitscape.jl/latest/) calculation that is implemented in [Julia](https://julialang.org). The app queries a [PostGIS](https://postgis.net) database for the vector and raster data required to perform the calculations.
 
@@ -75,9 +74,6 @@ install.packages("R6")
 install.packages("raster")
 install.packages("rpostgis")
 install.packages("sf")
-install.packages("shiny")
-install.packages("shinyBS")
-install.packages("shinyjs")
 install.packages("stringr")
 install.packages("uuid")
 install.packages("vroom")
