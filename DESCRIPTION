@@ -12,21 +12,16 @@ Suggests:
 Imports:
     configr,
     DBI,
-    future,
     glue,
-    ipc,
     JuliaCall,
-    leaflet,
     logger,
-    promises,
     R6,
     raster,
     rpostgis,
     sf,
     sp,
     stringr,
-    terra,
-    uuid
+    terra
 Config/testthat/edition: 3
 RoxygenNote: 7.2.1
 Encoding: UTF-8
