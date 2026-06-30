@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import config
 from routers import pipeline, rasters
 
+config.setup_logging()
+
 # This is startup code  
 @asynccontextmanager
 async def lifespan(app: FastAPI):
