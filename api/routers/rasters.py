@@ -12,15 +12,7 @@ router = APIRouter(prefix="/rasters", tags=["rasters"])
 
 def _get_job_dir(job_id: str) -> str:
     base = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
-    d = os.path.join(base, job_id)
-    if os.path.isdir(d):
-        return d
-    from .pipeline import _jobs, _lock
-    with _lock:
-        job = _jobs.get(job_id)
-    if job and job.get("work_dir"):
-        return job["work_dir"]
-    return d
+    return os.path.join(base, job_id)
 
 
 @router.get("/{job_id}/{layer}.png")

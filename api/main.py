@@ -9,7 +9,8 @@ from routers import pipeline, rasters
 
 config.setup_logging()
 
-# This is startup code  
+
+# This is startup code
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create the pipeline work directory if it doesn't exist, it will be needed later
@@ -34,6 +35,7 @@ app.add_middleware(
 
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(rasters.router, prefix="/api")
+
 
 @app.get("/api/health")
 async def health():
