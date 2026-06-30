@@ -1,7 +1,7 @@
 import { useFeatures } from '@gsbio/engine';
 import type { DataFeature } from '@gsbio/engine';
 
-const CATEGORY_OPTIONS = ['Building', 'Road', 'River', 'Lights', 'LightString', 'Lamps'];
+const CATEGORY_OPTIONS = ['Building', 'Road', 'River', 'Lights', 'LightString'];
 
 function FeatureCard({ feature }: { feature: DataFeature }) {
   const { state, updateFeature, selectFeature, removeFeature, toggleVisibility } = useFeatures();
@@ -46,7 +46,7 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
     updateFeature(feature.id, { data: { ...(feature.data ?? {}), [key]: val } });
   };
 
-  const showHeight = feature.category === 'Building' || feature.category === 'Lights' || feature.category === 'LightString' || feature.category === 'Lamps';
+  const showHeight = feature.category === 'Building' || feature.category === 'Lights' || feature.category === 'LightString';
   const showSpacing = feature.category === 'LightString';
 
   return (

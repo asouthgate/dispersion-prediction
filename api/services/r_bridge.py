@@ -75,8 +75,13 @@ def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str,
     with fiona.open(path, "w", driver="GPKG", schema=schema, crs=BNG, layer=layer) as dst:
         for feat in features:
             props = feat.get("properties", {})
-            write_props = {k: props.get(k, 0.0 if prop_schema.get(k) == "float" else None)
-                           for k in prop_schema}
+            write_props = {}
+            for k in prop_schema:
+                val = props.get(k)
+                if val is not None:
+                    write_props[k] = float(val) if prop_schema[k] == "float" else val
+                else:
+                    write_props[k] = 0.0 if prop_schema[k] == "float" else None
             dst.write({"geometry": feat["geometry"], "properties": write_props})
 
 
