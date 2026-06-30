@@ -21,10 +21,10 @@ for i in $(seq 1 30); do
 done
 
 echo "Running resistance pipeline"
-python3 test/run_api_test.py --api-base "$API_URL" --out "$OUTPUT_DIR/resistance/"
+python3 test/run_pipeline.py --api-base "$API_URL" --stage resistance --out "$OUTPUT_DIR/resistance/"
 
 echo "Running current (circuitscape) pipeline"
-python3 test/test_api_cli.py --api-base "$API_URL" --stage current --out "$OUTPUT_DIR/current/"
+python3 test/run_pipeline.py --api-base "$API_URL" --stage current --out "$OUTPUT_DIR/current/"
 
 echo "Copying outputs from container"
 # Results live in hash-based dirs: copy all job output dirs
