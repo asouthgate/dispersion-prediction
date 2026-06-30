@@ -1,18 +1,16 @@
-"""FastAPI main application."""
-
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 import config
 from routers import pipeline, rasters
 
-
+# This is startup code  
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Create the pipeline work directory if it doesn't exist, it will be needed later
     os.makedirs(config.PIPELINE_WORK_DIR, exist_ok=True)
     yield
 
@@ -38,9 +36,3 @@ app.include_router(rasters.router, prefix="/api")
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
-
-
-# Serve frontend built files in production (dev uses Vite on port 5180)
-frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-if os.path.isdir(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
