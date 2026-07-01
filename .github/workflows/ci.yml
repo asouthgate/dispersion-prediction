@@ -78,6 +78,15 @@ jobs:
           pip install -r api/requirements.txt
           pip install pytest fakeredis
 
+      - name: Create .bats.cfg from template
+        run: envsubst < test/docker/batapp/bats.cfg.template > ~/.bats.cfg
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: os
+          DATABASE_USER: bats
+          DATABASE_PASSWORD: bats
+
       - name: Run API tests
         run: pytest api/test/ -v
         env:
@@ -120,22 +129,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create .bats.cfg stub
-        run: |
-          cat > ~/.bats.cfg << 'EOF'
-          [database]
-          host = localhost
-          name = os
-          user = bats
-          password = bats
-          port = 5432
-          dtm_table = test_dtm
-          dsm_table = test_dsm
-          lcm_table = test_lcm
-          roads_table = test_roads
-          rivers_table = test_rivers
-          buildings_table = test_buildings
-          EOF
+      - name: Create .bats.cfg from template
+        run: envsubst < test/docker/batapp/bats.cfg.template > ~/.bats.cfg
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: os
+          DATABASE_USER: bats
+          DATABASE_PASSWORD: bats
 
       - name: Run Docker API integration tests
         run: bash run-docker-api-test.sh
