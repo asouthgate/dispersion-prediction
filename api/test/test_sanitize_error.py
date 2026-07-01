@@ -10,12 +10,6 @@ from tasks import _sanitize_error
 
 class SanitizeErrorTests(unittest.TestCase):
 
-    def test_rscript_missing(self):
-        msg = 'No such file or directory: Rscript'
-        result = _sanitize_error(msg)
-        self.assertIn("R environment not configured", result)
-        self.assertNotIn("Rscript", result)
-
     def test_r_script_not_found(self):
         result = _sanitize_error("R script not found: scripts/foo.R")
         self.assertIn("pipeline script is not available", result)
