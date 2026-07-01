@@ -147,7 +147,7 @@ test_that("Resistance pipeline produces expected output layers", {
     }
     expect_true(file.exists(file.path(working_dir, "dsm.tif")))
     expect_true(file.exists(file.path(working_dir, "dtm.tif")))
-    expect_true(file.exists(file.path(working_dir, "lcm_r.tif")))
+    expect_true(file.exists(file.path(working_dir, "lcm.tif")))
 
     logger::log_info("Output rasters written to %s", working_dir)
 
