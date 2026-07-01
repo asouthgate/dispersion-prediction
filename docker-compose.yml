@@ -42,11 +42,6 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DB_HOST: postgis
-      DB_NAME: ${DATABASE_NAME:-os}
-      DB_PORT: 5432
-      DB_USER: ${DATABASE_USER:-bats}
-      DB_PASSWORD: ${DATABASE_PASSWORD:-bats}
       DATABASE_HOST: postgis
       DATABASE_NAME: ${DATABASE_NAME:-os}
       DATABASE_PORT: 5432
@@ -56,6 +51,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       PIPELINE_WORK_DIR: /tmp/circuitscape
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
     volumes:
       - ./data/seed:/seed
       - pipeline_work:/tmp/circuitscape
@@ -68,11 +64,6 @@ services:
       postgis:
         condition: service_healthy
     environment:
-      DB_HOST: postgis
-      DB_NAME: ${DATABASE_NAME:-os}
-      DB_PORT: 5432
-      DB_USER: ${DATABASE_USER:-bats}
-      DB_PASSWORD: ${DATABASE_PASSWORD:-bats}
       DATABASE_HOST: postgis
       DATABASE_NAME: ${DATABASE_NAME:-os}
       DATABASE_PORT: 5432
@@ -81,6 +72,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       PIPELINE_WORK_DIR: /tmp/circuitscape
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
       PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:-2}
     volumes:
       - pipeline_work:/tmp/circuitscape
