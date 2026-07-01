@@ -1,7 +1,23 @@
 import { useFeatures } from '@gsbio/engine';
 import type { DataFeature } from '@gsbio/engine';
+import { Building04, CarAuto, WaterDrop, Sun } from 'react-coolicons';
 
-const CATEGORY_OPTIONS = ['Building', 'Road', 'River', 'Lights', 'LightString'];
+const categoryIconStyle = { width: 14, height: 14 };
+
+const categoryIconMap: Record<string, React.ReactNode> = {
+  Building: <Building04 style={categoryIconStyle} />,
+  Road: <CarAuto style={categoryIconStyle} />,
+  River: <WaterDrop style={categoryIconStyle} />,
+  Lights: <Sun style={categoryIconStyle} />,
+  LightString: <Sun style={categoryIconStyle} />,
+};
+
+const kindIconFallback = {
+  point: '◉',
+  linestring: '〰',
+  polygon: '⬡',
+  circle: '○',
+} as const;
 
 function FeatureCard({ feature }: { feature: DataFeature }) {
   const { state, updateFeature, selectFeature, removeFeature, toggleVisibility } = useFeatures();
@@ -34,13 +50,10 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
     );
   }
 
-  const kindIcon = feature.geometryKind === 'point' ? '◉'
-    : feature.geometryKind === 'linestring' ? '〰'
-    : feature.geometryKind === 'polygon' ? '⬡'
-    : '○';
+  const kindIcon = categoryIconMap[feature.category] ?? kindIconFallback[feature.geometryKind as keyof typeof kindIconFallback] ?? '○';
 
-  const height = (feature.data?.height as number) ?? 0;
-  const spacing = (feature.data?.spacing as number) ?? 0;
+  const height = feature.data?.height as number | undefined;
+  const spacing = feature.data?.spacing as number | undefined;
 
   const updateData = (key: string, val: number) => {
     updateFeature(feature.id, { data: { ...(feature.data ?? {}), [key]: val } });
@@ -56,16 +69,7 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
     >
       <div className="data-feature-row">
         <span className="data-feature-dot">{kindIcon}</span>
-        <select
-            className="feature-type-select"
-            value={feature.category}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => updateFeature(feature.id, { category: e.target.value })}
-          >
-            {CATEGORY_OPTIONS.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+        <span className="data-feature-type">{feature.category}</span>
         <input
           type="text"
           className="data-feature-label"
@@ -91,7 +95,7 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
               min={0}
               max={100}
               step={1}
-              value={height}
+              value={height ?? ""}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => updateData('height', Number(e.target.value))}
             />
@@ -104,7 +108,7 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
                 min={0}
                 max={200}
                 step={1}
-                value={spacing}
+                value={spacing ?? ""}
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => updateData('spacing', Number(e.target.value))}
               />

@@ -7,16 +7,19 @@ import { RoostPanel } from './RoostPanel';
 import { GeneratePanel } from './GeneratePanel';
 import { FileUpload } from './CsvUpload';
 import { HelpPanel } from './HelpPanel';
+import { Bulb } from 'react-coolicons';
 
 interface SectionDef {
   id: string;
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   defaultOpen?: boolean;
 }
 
+const iconStyle = { width: 16, height: 16 };
+
 const SECTIONS: SectionDef[] = [
-  { id: 'lights', icon: '🗁', label: 'Street Lights' },
+  { id: 'lights', icon: <Bulb style={iconStyle} />, label: 'Street Lights' },
   { id: 'params', icon: '⚙', label: 'Parameters' },
   { id: 'roost', icon: '◯', label: 'Roost', defaultOpen: true },
   { id: 'drawings', icon: '◿', label: 'Drawings', defaultOpen: true },
@@ -82,7 +85,7 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
               onClick={() => { setCollapsed(false); setOpenSections((prev) => new Set(prev).add(s.id)); }}
               title={s.label}
             >
-              {s.icon}
+              <span className="panel-icon-content">{s.icon}</span>
             </button>
           ))}
         </nav>
@@ -93,7 +96,7 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
   return (
     <div className="side-panel">
       <div className="side-panel-top-row">
-        <span className="side-panel-title">Horseshoe Bat Predictor</span>
+        <span className="side-panel-title">ECHO.FLOW</span>
         <button className="panel-collapse-btn" onClick={() => setCollapsed(true)} title="Collapse panel">▶</button>
       </div>
       <div className="side-panel-scroll">
@@ -108,7 +111,7 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
               >
                 <span className="panel-section-tick" />
                 <span className="panel-section-chevron">{open ? '▾' : '▸'}</span>
-                <span className="panel-section-icon">{s.icon}</span>
+                <span className="panel-section-icon"><span className="panel-icon-content">{s.icon}</span></span>
                 <span className="panel-section-title">{s.label}</span>
               </button>
               {open && <div className="panel-section-body">{renderBody(s.id)}</div>}

@@ -8,20 +8,26 @@ import {
   type ResultPaint,
 } from '@gsbio/engine';
 import { OSM_RASTER_STYLE } from '@gsbio/engine';
+import { Building04 } from 'react-coolicons';
+import { CarAuto } from 'react-coolicons';
+import { WaterDrop } from 'react-coolicons';
+import { Sun } from 'react-coolicons';
 
 const CENTER: [number, number] = [-3.590523, 50.586362];
 const ZOOM = 13;
 
-const TOOLS: Array<{ mode: DrawMode; label: string; icon: string; color: string }> = [
+const iconStyle = { width: 18, height: 18 };
+
+const TOOLS: Array<{ mode: DrawMode; label: string; icon: React.ReactNode; color: string }> = [
   { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def' },
-  { mode: 'polygon', label: 'Building', icon: '⬡', color: '#a0522d' },
-  { mode: 'linestring', label: 'Road', icon: '⏛', color: '#888888' },
-  { mode: 'linestring', label: 'River', icon: '〰', color: '#3678b5' },
-  { mode: 'point', label: 'Lights', icon: '💡', color: '#ffbd17' },
+  { mode: 'polygon', label: 'Building', icon: <Building04 style={iconStyle} />, color: '#a0522d' },
+  { mode: 'linestring', label: 'Road', icon: <CarAuto style={iconStyle} />, color: '#888888' },
+  { mode: 'linestring', label: 'River', icon: <WaterDrop style={iconStyle} />, color: '#3678b5' },
+  { mode: 'point', label: 'Lights', icon: <Sun style={iconStyle} />, color: '#ffbd17' },
   { mode: 'linestring', label: 'LightString', icon: '✦', color: '#ff9900' },
 ];
 
-const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon }));
+const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon as never }));
 
 const Feature_OPACITY = 0.2;
 

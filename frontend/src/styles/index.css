@@ -139,6 +139,14 @@ html, body, #root {
 .draw-btn-icon {
   font-size: 15px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.draw-btn-icon svg {
+  width: 18px;
+  height: 18px;
+  color: currentColor;
 }
 .draw-btn-label {
   font-size: 9px;
@@ -260,6 +268,17 @@ html, body, #root {
   font-size: 16px;
   transition: all var(--transition);
 }
+.panel-icon-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.panel-icon-content svg {
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+}
 .panel-icon-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -321,6 +340,13 @@ html, body, #root {
   line-height: 1;
   flex-shrink: 0;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+.panel-section-icon svg {
+  width: 16px;
+  height: 16px;
+  color: currentColor;
 }
 .panel-section-title {
   flex: 1;
@@ -372,6 +398,14 @@ html, body, #root {
 .data-feature-dot {
   width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.data-feature-dot svg {
+  width: 14px;
+  height: 14px;
+  color: currentColor;
 }
 .data-feature-type {
   display: inline-block;

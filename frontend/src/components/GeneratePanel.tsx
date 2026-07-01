@@ -19,7 +19,7 @@ interface GeneratePanelProps {
 export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
   const engine = useEngine();
   const { state: runState } = useRun();
-  const { state: model } = useModel();
+  const { state: model, setModelParam } = useModel();
   const { summaries } = useResults();
   const isRunning = runState.current !== null &&
     (runState.current.status === 'preprocessing' || runState.current.status === 'submitting' || runState.current.status === 'running');
@@ -78,7 +78,18 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
       </div>
 
       <div className="field">
-        <span className="field-label">Resolution: {resolution} m/px</span>
+        <span className="field-label">Resolution (m/px)</span>
+        <div className="range-field">
+          <input
+            type="range"
+            min={1}
+            max={100}
+            step={1}
+            value={resolution}
+            onChange={(e) => setModelParam('resolution', Number(e.target.value))}
+          />
+          <span className="range-value">{resolution}</span>
+        </div>
       </div>
 
       <RunPanel />
