@@ -17,8 +17,22 @@ __working_dir__
 .env
 
 # Seed GIS data (large files, not versioned)
-test/data/seed/gis/*/
-!test/data/seed/gis/*/.gitkeep
+# Ignore everything in each subdirectory, then unignore sample/tracked files
+test/data/seed/gis/dsm/*
+!test/data/seed/gis/dsm/*_sample.tif
+!test/data/seed/gis/dsm/.gitkeep
+test/data/seed/gis/dtm/*
+!test/data/seed/gis/dtm/*_sample.tif
+!test/data/seed/gis/dtm/.gitkeep
+test/data/seed/gis/lcm/*
+!test/data/seed/gis/lcm/*_sample.tif
+!test/data/seed/gis/lcm/.gitkeep
+test/data/seed/gis/buildings/*
+!test/data/seed/gis/buildings/buildings.*
+test/data/seed/gis/roads/*
+!test/data/seed/gis/roads/roads.*
+test/data/seed/gis/rivers/*
+!test/data/seed/gis/rivers/rivers.*
 
 # Postgres dumps
 test/data/seed/sql/*.sql.gz
