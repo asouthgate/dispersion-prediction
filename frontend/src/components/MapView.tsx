@@ -1,13 +1,20 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { DrawMode } from '@gsbio/engine';
-import { MapScene, DrawToolbar, type DrawTool } from '@gsbio/engine';
+import {
+  MapScene,
+  DrawToolbar,
+  type DrawTool,
+  useEngine,
+  type DataFeature,
+  destinationPoint,
+} from '@gsbio/engine';
 import {
   createTerraDraw2DRenderer,
   type TerraDraw2DRenderer,
   type FeatureStyleConfig,
   type ResultPaint,
 } from '@gsbio/engine';
-import { OSM_RASTER_STYLE } from '@gsbio/engine';
+import { POSITRON_STYLE } from '@gsbio/engine';
 import { Building04 } from 'react-coolicons';
 import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
@@ -57,11 +64,86 @@ const resultStyles: ResultPaint = {
   circleRadius: 6,
 };
 
+const ROOST_SOURCE = 'roost-source';
+const ROOST_RECT_FILL = 'roost-rect-fill';
+const ROOST_RECT_LINE = 'roost-rect-line';
+const ROOST_CROSSHAIR = 'roost-crosshair';
+const RECT_FILL_COLOR = '#5b8def';
+const RECT_LINE_COLOR = '#5b8def';
+
+type MapRef = {
+  getStyle(): { layers: Array<{ id: string }> };
+  addSource(id: string, source: unknown): void;
+  addLayer(layer: unknown, beforeId?: string): void;
+  removeLayer(id: string): void;
+  removeSource(id: string): void;
+};
+
+function n(p: { lng: number; lat: number }, r: number) { return destinationPoint(p, r, 0); }
+function e(p: { lng: number; lat: number }, r: number) { return destinationPoint(p, r, 90); }
+function s(p: { lng: number; lat: number }, r: number) { return destinationPoint(p, r, 180); }
+function w(p: { lng: number; lat: number }, r: number) { return destinationPoint(p, r, 270); }
+
+function addRoostOverlay(map: MapRef, center: { lng: number; lat: number }, radiusMeters: number) {
+  removeRoostOverlay(map);
+  const rectCoords: [number, number][] = [
+    [w(center, radiusMeters).lng, n(center, radiusMeters).lat],
+    [e(center, radiusMeters).lng, n(center, radiusMeters).lat],
+    [e(center, radiusMeters).lng, s(center, radiusMeters).lat],
+    [w(center, radiusMeters).lng, s(center, radiusMeters).lat],
+    [w(center, radiusMeters).lng, n(center, radiusMeters).lat],
+  ];
+  const rectGeom: GeoJSON.Geometry = { type: 'Polygon', coordinates: [rectCoords] };
+  const crossGeom: GeoJSON.Geometry = {
+    type: 'MultiLineString',
+    coordinates: [
+      [[w(center, radiusMeters).lng, center.lat], [e(center, radiusMeters).lng, center.lat]],
+      [[center.lng, s(center, radiusMeters).lat], [center.lng, n(center, radiusMeters).lat]],
+    ],
+  };
+  map.addSource(ROOST_SOURCE, { type: 'geojson', data: { type: 'Feature', geometry: rectGeom, properties: {} } });
+  map.addLayer({ id: ROOST_RECT_FILL, type: 'fill', source: ROOST_SOURCE, paint: { 'fill-color': RECT_FILL_COLOR, 'fill-opacity': 0.08 } });
+  map.addLayer({ id: ROOST_RECT_LINE, type: 'line', source: ROOST_SOURCE, paint: { 'line-color': RECT_LINE_COLOR, 'line-width': 1.5 } });
+  map.addSource(`${ROOST_SOURCE}-cross`, { type: 'geojson', data: { type: 'Feature', geometry: crossGeom, properties: {} } });
+  map.addLayer({ id: ROOST_CROSSHAIR, type: 'line', source: `${ROOST_SOURCE}-cross`, paint: { 'line-color': RECT_LINE_COLOR, 'line-width': 1, 'line-dasharray': [4, 3] } });
+}
+
+function removeRoostOverlay(map: MapRef) {
+  try { map.removeLayer(ROOST_CROSSHAIR); } catch {}
+  try { map.removeLayer(ROOST_RECT_LINE); } catch {}
+  try { map.removeLayer(ROOST_RECT_FILL); } catch {}
+  try { map.removeSource(`${ROOST_SOURCE}-cross`); } catch {}
+  try { map.removeSource(ROOST_SOURCE); } catch {}
+}
+
+function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
+  const engine = useEngine();
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    return engine.subscribe(() => {
+      const map = renderer.getMap();
+      if (!map) return;
+      const snapshot = engine.getSnapshot();
+      const roost = snapshot.features.features.find((f: DataFeature) => f.category === 'Roost');
+      if (roost?.circle) {
+        addRoostOverlay(map, roost.circle.center, roost.circle.radiusMeters);
+        mounted.current = true;
+      } else if (mounted.current) {
+        removeRoostOverlay(map);
+        mounted.current = false;
+      }
+    });
+  }, [engine, renderer]);
+
+  return null;
+}
+
 export function MapView() {
   const renderer = useMemo<TerraDraw2DRenderer>(
     () =>
       createTerraDraw2DRenderer({
-        style: OSM_RASTER_STYLE as never,
+        style: POSITRON_STYLE as never,
         center: CENTER,
         zoom: ZOOM,
         featureStyles,
@@ -77,6 +159,7 @@ export function MapView() {
         onStartDrawing={renderer.startDrawing}
         onSelectMode={renderer.selectMode}
       />
+      <RoostOverlay renderer={renderer} />  
     </MapScene>
   );
 }
