@@ -1,3 +1,0 @@
-services:
-  postgis:
-    image: dispersion-prediction-app-postgis

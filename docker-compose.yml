@@ -1,5 +1,6 @@
 services:
   postgis:
+    image: dispersion-prediction-app-postgis
     build:
       context: .
       dockerfile: test/docker/Dockerfile.gis

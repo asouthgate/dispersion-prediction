@@ -17,10 +17,8 @@ if [ "${SKIP_BUILD:-}" != "true" ]; then
     -f test/docker/Dockerfile.frontend .
 fi
 
-COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.ci.yml"
-
 echo "Starting stack"
-docker compose $COMPOSE_ARGS up -d
+docker compose up -d
 
 echo "Waiting for API ($API_URL)"
 for i in $(seq 1 30); do
@@ -41,10 +39,10 @@ python3 test/run_pipeline.py --api-base "$API_URL" --stage current --out "$OUTPU
 echo "Copying outputs from container"
 # Results live in hash-based dirs: copy all job output dirs
 mkdir -p "$OUTPUT_DIR/container"
-docker compose $COMPOSE_ARGS cp "api:/tmp/circuitscape/." "./${OUTPUT_DIR}/container/" 2>/dev/null || echo "  (no circuitscape dirs to copy, results downloaded via HTTP above)"
+docker compose cp "api:/tmp/circuitscape/." "./${OUTPUT_DIR}/container/" 2>/dev/null || echo "  (no circuitscape dirs to copy, results downloaded via HTTP above)"
 
 echo "Tearing down"
-docker compose $COMPOSE_ARGS down
+docker compose down
 
 echo "Output in $OUTPUT_DIR/"
 ls -la "$OUTPUT_DIR/"
