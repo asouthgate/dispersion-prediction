@@ -79,7 +79,7 @@ def _start_pipeline(stage: str, req: PipelineRequest) -> PipelineStartResponse:
     features = [f.model_dump() for f in req.features]
     params = dict(req.params)
 
-    payload_hash = _payload_hash(roost, features, params)
+    payload_hash = _payload_hash(stage, roost, features, params)
     work_dir = _create_work_dir(payload_hash)
 
     # Dedup: an identical in-flight payload returns the existing task id.

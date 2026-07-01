@@ -8,21 +8,21 @@ import struct
 from rasterio.transform import from_origin
 from psycopg2 import sql
 
+from config import DTM_TABLE, DSM_TABLE, LCM_TABLE, DATABASE_HOST, DATABASE_PORT, DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD
 
 logger = logging.getLogger(__name__)
 
 
 def get_db_connection():
-    """Create a database connection from environment config."""
-    import os
+    """Create a database connection from config (loaded from ~/.bats.cfg)."""
     import psycopg2
 
     return psycopg2.connect(
-        host=os.environ.get("DB_HOST", "localhost"),
-        port=int(os.environ.get("DB_PORT", "5432")),
-        dbname=os.environ.get("DB_NAME", "bats"),
-        user=os.environ.get("DB_USER", "postgres"),
-        password=os.environ.get("DB_PASSWORD", ""),
+        host=DATABASE_HOST,
+        port=DATABASE_PORT,
+        dbname=DATABASE_NAME,
+        user=DATABASE_USER,
+        password=DATABASE_PASSWORD,
     )
 
 
@@ -128,14 +128,31 @@ def _write_geotiff(out_path: str, row: tuple, resolution: float) -> bool:
     return True
 
 
-def fetch_rasters(extent: tuple[float, float, float, float], resolution: float, work_dir: str) -> dict[str, str]:
-    """Fetch raster data (DTM, DSM, LCM) from PostGIS and save as GeoTIFF."""
+def fetch_rasters(extent: tuple[float, float, float, float], resolution: float, work_dir: str,
+                  tables: list[tuple[str, str]] | None = None) -> dict[str, str]:
+    """Fetch raster data from PostGIS and save as GeoTIFF.
+
+    Args:
+        extent: (xmin, ymin, xmax, ymax) in BNG (EPSG:27700)
+        resolution: pixel resolution in meters
+        work_dir: directory to save output GeoTIFFs
+        tables: list of (table_name, output_key) pairs.
+                Defaults to [(DTM_TABLE, "dtm"), (DSM_TABLE, "dsm"), (LCM_TABLE, "lcm")]
+                from ~/.bats.cfg (loaded at startup via config module).
+    """
+    if tables is None:
+        tables = [
+            (DTM_TABLE, "dtm"),
+            (DSM_TABLE, "dsm"),
+            (LCM_TABLE, "lcm"),
+        ]
+
     conn = get_db_connection()
     xmin, ymin, xmax, ymax = extent
     rasters: dict[str, str] = {}
 
     try:
-        for table in ["dtm", "dsm", "lcm"]:
+        for table, key in tables:
             try:
                 query = sql.SQL("""
                     WITH merged AS (
@@ -164,19 +181,27 @@ def fetch_rasters(extent: tuple[float, float, float, float], resolution: float, 
                     row = cursor.fetchone()
 
                 if not row:
+                    logger.warning(f"No raster data for {key} (table={table}) in extent")
                     continue
 
-                out_path = os.path.join(work_dir, f"{table}.tif")
-                
-                # Call the new helper function to process and save
+                out_path = os.path.join(work_dir, f"{key}.tif")
+
                 if _write_geotiff(out_path, row, resolution):
-                    rasters[table] = out_path
+                    rasters[key] = out_path
+                    logger.info(f"Fetched {key} from table {table} -> {out_path}")
 
             except Exception as e:
                 conn.rollback()
-                logger.warning(f"Failed to fetch raster {table}: {e}")
+                raise RuntimeError(f"Failed to fetch raster {key} from table {table}: {e}") from e
 
     finally:
         conn.close()
+
+    if not rasters:
+        raise RuntimeError(
+            f"Coverage query produced zero result layers. "
+            f"Tables checked: {[t[0] for t in tables]}. "
+            "Verify the database has raster data covering the roost location."
+        )
 
     return rasters

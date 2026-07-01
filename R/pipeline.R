@@ -181,16 +181,21 @@ fetch_raster_inputs <- function(algorithm_parameters, groundrast, working_dir) {
     logger::log_info("Resampling dsm raster")
     r_dsm <- raster::resample(dsm, groundrast)
 
-    logger::log_info("Fetching lcm raster from db")
+    logger::log_info("Fetching lcm raster from db (table: %s)", lcm_table)
     lcm_result <- read_db_raster_default(lcm_table, ext, database_host, database_name,
                         database_port, database_user, database_password, default_raster, resolution)
     lcm <- lcm_result$raster
     lcm_failed <- lcm_result$failflag
-    lcm_r <- raster::resample(lcm, groundrast)
+    if (lcm_failed) {
+        logger::log_warn("LCM raster fetch FAILED: no LCM data available for this extent")
+    } else {
+        logger::log_info("LCM raster fetch succeeded")
+    }
+    r_lcm <- raster::resample(lcm, groundrast)
 
     raster_failed <- dsm_failed | dtm_failed | lcm_failed
 
-    return(list(lcm_r=lcm_r, r_dtm=r_dtm, r_dsm=r_dsm, dsm=dsm, dtm=dtm, raster_failed=raster_failed))
+    return(list(r_lcm=r_lcm, r_dtm=r_dtm, r_dsm=r_dsm, dsm=dsm, dtm=dtm, raster_failed=raster_failed))
 }
 
 #' Get inputs for raster pipeline from db, and combining with inputs
@@ -221,7 +226,7 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
     rivers <- vector_inputs$rivers
     roads <- vector_inputs$roads
     buildingsvec <- vector_inputs$buildingsvec
-    lcm_r <- raster_inputs$lcm_r
+    r_lcm <- raster_inputs$r_lcm
     r_dtm <- raster_inputs$r_dtm
     r_dsm <- raster_inputs$r_dsm
 
@@ -259,7 +264,7 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
     # raster_failed <- dsm_failed | dtm_failed | lcm_failed
 
     # TODO: could replace with a struct
-    return(list(groundrast=groundrast, lcm_r=lcm_r, r_dtm=r_dtm, r_dsm=r_dsm, rivers=rivers, roads=roads,
+    return(list(groundrast=groundrast, r_lcm=r_lcm, r_dtm=r_dtm, r_dsm=r_dsm, rivers=rivers, roads=roads,
             buildingsvec=buildingsvec, buildingsrast=buildings, lamps=lamps,
             lamps=lamps, circles=circles, disk=disk))
 }
@@ -278,7 +283,7 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
     roads <- base_inputs$roads 
     buildings <- base_inputs$buildingsrast
     lamps <- base_inputs$lamps
-    lcm_r <- base_inputs$lcm_r
+    r_lcm <- base_inputs$r_lcm
     r_dtm <- base_inputs$r_dtm
     r_dsm <- base_inputs$r_dsm
     lamps <- base_inputs$lamps
@@ -296,7 +301,7 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
     surfs <- calc_surfs(r_dtm, r_dsm, buildings)
 
     logger::log_info("Calculating lcm resistance")
-    landscapeRes <- get_landscape_resistance_lcm(lcm_r, buildings, surfs$soft_surf, algorithm_parameters$landscapeResistance$rankmax,
+    landscapeRes <- get_landscape_resistance_lcm(r_lcm, buildings, surfs$soft_surf, algorithm_parameters$landscapeResistance$rankmax,
                                     algorithm_parameters$landscapeResistance$resmax, algorithm_parameters$landscapeResistance$xmax)
 
     logger::log_info("Calculating linear resistance")
@@ -363,7 +368,7 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
         save_image(landscapeRes, "landscapeRes.png", working_dir)
         save_image(linearRes, "linearRes.png", working_dir)
         save_image(lcm, "lcm.png", working_dir)
-        save_image(lcm_r, "lcm_r.png", working_dir)
+        save_image(r_lcm, "r_lcm.png", working_dir)
         save_image(roadRes, "roadRes.png", working_dir)
         save_image(riverRes, "riverRes.png", working_dir)
         save_image(log(point_irradiance), "logirradiance.png", working_dir)

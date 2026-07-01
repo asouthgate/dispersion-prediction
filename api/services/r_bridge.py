@@ -231,10 +231,12 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
         ("log_lamp_res", "Log Lamp Resistance"),
         ("dsm", "DSM"),
         ("dtm", "DTM"),
+        ("lcm", "LCM"),
         ("log_current", "Log Current"),
         ("log_current_clipped", "Log Current (clipped)"),
     ]
 
+    found_ids = []
     for file_key, display_name in expected_layers:
         tif_path = os.path.join(work_dir, f"{file_key}.tif")
         if os.path.exists(tif_path):
@@ -243,5 +245,15 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
                 "name": display_name,
                 "tif_path": tif_path,
             })
+            found_ids.append(file_key)
+
+    # Log which coverage layers were found: useful for diagnosing missing LCM
+    coverage_expected = {"dtm", "dsm", "lcm"}
+    coverage_found = set(found_ids) & coverage_expected
+    if coverage_found != coverage_expected:
+        missing = coverage_expected - coverage_found
+        logger.warning("Coverage layers missing from work dir: %s (found: %s)", missing, coverage_found)
+    else:
+        logger.info("All coverage layers present: %s", coverage_found)
 
     return layers

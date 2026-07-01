@@ -5,7 +5,7 @@ write_pipeline_outputs <- function(resistance_maps, raster_inp, working_dir, dis
 
     dir.create(file.path(working_dir, "images"), recursive = TRUE, showWarnings = FALSE)
 
-    for (name in c("r_dsm", "r_dtm", "lcm_r")) {
+    for (name in c("r_dsm", "r_dtm", "r_lcm")) {
             rast <- raster_inp[[name]]
         if (!is.null(rast) && inherits(rast, "RasterLayer")) {
             fname <- sub("^r_", "", name)

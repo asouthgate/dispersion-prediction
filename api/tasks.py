@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import signal
 import subprocess
 import time
@@ -15,10 +14,11 @@ from typing import Any
 
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
+from pyproj import Transformer
 
+from config import PIPELINE_TIMEOUT
 from services.r_bridge import wgs84_to_bng
-from services.db import fetch_rasters
-from services.raster_service import get_bounds_for_tif, tif_to_png
+from services.raster_service import tif_to_png
 from services.r_bridge import _write_input_files as wif, collect_results
 
 logger = logging.getLogger(__name__)
@@ -47,12 +47,13 @@ def _create_work_dir(job_id: str) -> str:
 
 
 def _payload_hash(
+    stage: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> str:
     """Hash the pipeline payload to derive a cache-friendly work directory name."""
-    payload = {"roost": roost, "features": features, "params": params}
+    payload = {"stage": stage, "roost": roost, "features": features, "params": params}
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -82,57 +83,42 @@ def _write_input_files(
         json.dump(input_data, f, indent=2)
 
 
-def _compute_extent_from_roost(
-    roost: dict[str, Any], resolution: float = 10.0
-) -> tuple[float, float, float, float]:
-    """Compute a square BNG extent centred on the roost with side 2x radius."""
-    from services.r_bridge import wgs84_to_bng
+def _run_coverage(
+    task,
+    work_dir: str,
+    roost: dict[str, Any],
+    features: list[dict[str, Any]],
+    params: dict[str, int | float],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run coverage pipeline via R script and convert TIFs to PNGs."""
+    t0 = time.monotonic()
+
+    _run_r_pipeline(task, work_dir, "coverage", roost, features, params)
+
+    layers_raw = collect_results(work_dir)
+    coverage_keys = {"dtm", "dsm", "lcm"}
+    coverage_found = {l["id"] for l in layers_raw if l["id"] in coverage_keys}
+    logger.info("Coverage layers found: %s (expected: %s)", coverage_found, coverage_keys)
+    layers_raw = [l for l in layers_raw if l["id"] in coverage_keys]
+
+    colormaps = {"dtm": "terrain", "dsm": "terrain", "lcm": "tab20"}
 
     easting, northing = wgs84_to_bng(roost["lng"], roost["lat"])
     radius = roost.get("radiusMeters", roost.get("radius_meters", 2500))
-
-    xmin = easting - radius
-    xmax = easting + radius
-    ymin = northing - radius
-    ymax = northing + radius
-
-    logger.info(
-        "Computed extent from roost (lng=%.6f lat=%.6f radius=%d): "
-        "BNG (%.1f %.1f %.1f %.1f) res=%g",
-        roost["lng"], roost["lat"], int(radius),
-        xmin, ymin, xmax, ymax, resolution,
-    )
-    return (xmin, ymin, xmax, ymax)
-
-
-def _run_coverage_python(
-    work_dir: str, roost: dict[str, Any] | None, resolution: float = 10.0
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Run coverage pipeline using Python directly (no R needed)."""
-    t0 = time.monotonic()
-
-    if not roost:
-        raise ValueError("No roost provided — cannot compute coverage extent")
-
-    _write_input_files(work_dir, roost, [], {})
-
-
-    extent_bng = _compute_extent_from_roost(roost, resolution)
-    logger.info("Fetching rasters for extent %s at resolution %g", extent_bng, resolution)
-    rasters = fetch_rasters(extent_bng, resolution, work_dir)
-    logger.info("Fetched %d rasters: %s", len(rasters), list(rasters.keys()))
+    extent_bng = (easting - radius, northing - radius, easting + radius, northing + radius)
+    bounds_wgs84 = _bng_to_wgs84(extent_bng)
 
     layers = []
-    for name, path in rasters.items():
-        bounds = get_bounds_for_tif(path)
+    for layer in layers_raw:
+        tif_path = layer["tif_path"]
+        name = layer["id"]
         png_path = os.path.join(work_dir, "images", f"{name}.png")
-        tif_to_png(path, png_path, bounds)
+        tif_to_png(tif_path, png_path, bounds_wgs84, colormap=colormaps.get(name, "magma"))
         layers.append({
             "id": name.upper(),
             "url": f"/api/rasters/{os.path.basename(work_dir)}/{name}.png",
-            "bounds": list(bounds),
+            "bounds": list(bounds_wgs84),
         })
-        logger.debug("Layer %s: bounds=%s", name.upper(), bounds)
 
     elapsed = time.monotonic() - t0
     if not layers:
@@ -142,29 +128,19 @@ def _run_coverage_python(
     return layers, []
 
 
-def _check_r_available() -> tuple[bool, str]:
-    """Check if Rscript and required scripts/packages are available."""
-    rscript = shutil.which("Rscript")
-    if not rscript:
-        return False, "R environment not configured. Resistance and Current pipelines require R. Only Coverage is available in this deployment."
-
-    scripts = [
-        os.path.join(REPO_ROOT, "scripts", "run_resistance_pipeline_json.R"),
-        os.path.join(REPO_ROOT, "scripts", "run_circuitscape.R"),
-    ]
-    missing = [s for s in scripts if not os.path.exists(s)]
-    if missing:
-        return False, f"Pipeline scripts not found: {', '.join(os.path.basename(s) for s in missing)}"
-
-    return True, ""
+def _bng_to_wgs84(extent_bng: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    """Convert BNG extent to WGS84 bounds [west, south, east, north]."""
+    transformer = Transformer.from_crs("EPSG:27700", "EPSG:4326", always_xy=True)
+    xmin, ymin, xmax, ymax = extent_bng
+    west, south = transformer.transform(xmin, ymin)
+    east, north = transformer.transform(xmax, ymax)
+    return (west, south, east, north)
 
 
 def _sanitize_error(message: str) -> str:
     """Replace raw error messages with user-safe ones."""
     lower = message.lower()
 
-    if "no such file or directory" in lower and "rscript" in lower:
-        return "R environment not configured. Resistance and Current pipelines require R. Only Coverage is available in this deployment."
     if "r script not found" in lower:
         return "The pipeline script is not available on this server."
     if "timed out" in lower or "timeout" in lower:
@@ -178,7 +154,6 @@ def _sanitize_error(message: str) -> str:
     known_safe = (
         "no roost defined",
         "unknown pipeline stage",
-        "r environment not configured",
         "the pipeline took too long",
         "no data is available",
     )
@@ -203,13 +178,10 @@ def _run_r_pipeline(
     """
     t0 = time.monotonic()
 
-    available, err_msg = _check_r_available()
-    if not available:
-        raise RuntimeError(err_msg)
-
     wif(work_dir, roost, features, params)
 
     r_script_map = {
+        "coverage": "scripts/run_coverage_pipeline.R",
         "resistance": "scripts/run_resistance_pipeline_json.R",
         "current": "scripts/run_circuitscape.R",
     }
@@ -256,7 +228,7 @@ def _run_r_pipeline(
                 pass
             return [], []
 
-        stdout, stderr = proc.communicate(timeout=620)
+        stdout, stderr = proc.communicate(timeout=PIPELINE_TIMEOUT - 60)
     except FileNotFoundError:
         raise RuntimeError(
             "R environment not configured. Resistance and Current pipelines require R. "
@@ -344,7 +316,7 @@ def run_pipeline_task(
             if not roost:
                 raise ValueError("No roost defined: place a roost on the map before running coverage.")
             _progress("Fetching coverage data...")
-            layers, warnings = _run_coverage_python(work_dir, roost, resolution=resolution)
+            layers, warnings = _run_coverage(self, work_dir, roost, features, params)
         elif stage == "resistance":
             if not roost:
                 raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
