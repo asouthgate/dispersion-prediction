@@ -3,6 +3,7 @@ WORKDIR /app
 
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 COPY --from=gsbio package.json package-lock.json ./gsbio-engine/
+RUN cd gsbio-engine && npm install
 RUN cd frontend && npm install
 
 COPY --from=gsbio . ./gsbio-engine/

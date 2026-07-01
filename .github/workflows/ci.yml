@@ -108,10 +108,8 @@ jobs:
           CELERY_RESULT_BACKEND: cache+memory://
           PIPELINE_WORK_DIR: /tmp/circuitscape-test
 
-  integration-tests:
+  build-images:
     runs-on: ubuntu-latest
-    needs: [api-tests]
-    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,7 +118,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build API image (cached)
+      - name: Build API image (cache)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -130,7 +128,7 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
-      - name: Build frontend image (cached)
+      - name: Build frontend image (cache)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -140,6 +138,37 @@ jobs:
           load: true
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [build-images]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Restore API image from cache
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: test/docker/Dockerfile.backend
+          tags: dispersion-prediction-app-api
+          load: true
+          cache-from: type=gha,scope=api
+
+      - name: Restore frontend image from cache
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: test/docker/Dockerfile.frontend
+          build-contexts: gsbio=gsbio-engine
+          tags: dispersion-prediction-app-frontend
+          load: true
+          cache-from: type=gha,scope=frontend
 
       - name: Create .bats.cfg from template
         run: envsubst < test/docker/batapp/bats.cfg.template > ~/.bats.cfg
