@@ -22,45 +22,6 @@ def _apply_circular_mask(rgba: "np.ndarray") -> "np.ndarray":
     return rgba
 
 
-def _pad_to_mercator_aspect(rgba: "np.ndarray", bounds: tuple[float, float, float, float]) -> "np.ndarray":
-    """Pad an RGBA image so its pixel aspect ratio matches the Web Mercator
-    aspect ratio of the geographic bounds.  Prevents MapLibre from stretching
-    the image when it fits the image to the bounds rectangle."""
-    import numpy as np
-    from pyproj import Transformer
-
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-    west, south, east, north = bounds
-
-    left_x, top_y = transformer.transform(west, north)
-    right_x, bottom_y = transformer.transform(east, south)
-
-    merc_w = right_x - left_x
-    merc_h = top_y - bottom_y
-    merc_ratio = merc_w / merc_h
-
-    height, width = rgba.shape[:2]
-    pixel_ratio = width / height
-
-    if abs(pixel_ratio - merc_ratio) < 0.001:
-        return rgba
-
-    if pixel_ratio > merc_ratio:
-        new_height = int(width / merc_ratio)
-        pad_top = (new_height - height) // 2
-        pad_bottom = new_height - height - pad_top
-        rgba = np.pad(rgba, ((pad_top, pad_bottom), (0, 0), (0, 0)),
-                      mode="constant", constant_values=0)
-    else:
-        new_width = int(height * merc_ratio)
-        pad_left = (new_width - width) // 2
-        pad_right = new_width - width - pad_left
-        rgba = np.pad(rgba, ((0, 0), (pad_left, pad_right), (0, 0)),
-                      mode="constant", constant_values=0)
-
-    return rgba
-
-
 def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float, float, float]] = None,
                circular_mask: bool = True, colormap: str = "magma") -> tuple[int, int, tuple[float, float, float, float]]:
     """Convert a GeoTIFF to PNG, returning (width, height, bounds).
@@ -117,7 +78,6 @@ def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float
             rgba[~valid, 3] = 0
 
         if circular_mask:
-            rgba = _pad_to_mercator_aspect(rgba, bounds)
             _apply_circular_mask(rgba)
 
         height, width = data.shape
