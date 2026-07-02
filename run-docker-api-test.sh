@@ -18,6 +18,7 @@ if [ "${SKIP_BUILD:-}" != "true" ]; then
 fi
 
 echo "Starting stack"
+docker compose down -v
 docker compose up -d
 
 echo "Waiting for API ($API_URL)"
