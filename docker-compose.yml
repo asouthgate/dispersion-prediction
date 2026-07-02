@@ -1,0 +1,114 @@
+services:
+  postgis:
+    image: dispersion-prediction-app-postgis
+    build:
+      context: .
+      dockerfile: test/docker/Dockerfile.gis
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-os}
+      POSTGRES_USER: ${DATABASE_USER:-bats}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-bats}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./test/data/seed:/seed-data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-bats} -d ${DATABASE_NAME:-os}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: dispersion-prediction-app-api
+    build:
+      dockerfile: test/docker/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_HOST: postgis
+      DATABASE_NAME: ${DATABASE_NAME:-os}
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER:-bats}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
+      CORS_ORIGINS: http://localhost:5180,http://localhost:5173,http://localhost:4173
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      PIPELINE_WORK_DIR: /tmp/circuitscape
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
+    volumes:
+      - pipeline_work:/tmp/circuitscape
+
+  celery_worker:
+    image: dispersion-prediction-app-api
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgis:
+        condition: service_healthy
+    environment:
+      DATABASE_HOST: postgis
+      DATABASE_NAME: ${DATABASE_NAME:-os}
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER:-bats}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      PIPELINE_WORK_DIR: /tmp/circuitscape
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
+      PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:-2}
+    volumes:
+      - pipeline_work:/tmp/circuitscape
+    working_dir: /app/api
+    command: >
+      celery -A celery_app worker
+      --loglevel=info
+      --concurrency=${PIPELINE_MAX_WORKERS:-2}
+
+  celery_beat:
+    image: dispersion-prediction-app-api
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      PIPELINE_WORK_DIR: /tmp/circuitscape
+    volumes:
+      - pipeline_work:/tmp/circuitscape
+    working_dir: /app/api
+    command: >
+      celery -A celery_app beat
+      --loglevel=info
+
+  frontend:
+    image: dispersion-prediction-app-frontend
+    build:
+      dockerfile: test/docker/Dockerfile.frontend
+      additional_contexts:
+        gsbio: ../gsbio-engine
+    ports:
+      - "5180:80"
+
+volumes:
+  pgdata:
+  redisdata:
+  pipeline_work:

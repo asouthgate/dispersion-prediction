@@ -23,9 +23,28 @@ save_image <- function(data, fname, working_dir) {
     logger::log_info(paste("Saving", savepath))
     tryCatch(
         {
-            png(savepath)
-            plot(data, axes=TRUE)
-            dev.off()
+            vals <- raster::values(data)
+            nona <- is.finite(vals)
+            if (sum(nona) == 0) {
+                logger::log_warn(paste("All NA values in", fname))
+                return(invisible())
+            }
+            library(png)
+            vmin <- min(vals[nona])
+            vmax <- max(vals[nona])
+            if (vmax == vmin) vmax <- vmin + 1
+            idx <- floor((vals - vmin) / (vmax - vmin) * 254) + 1
+            idx[!nona] <- NA_integer_
+            col_rgb <- col2rgb(terrain.colors(255)) / 255
+            rgba <- array(0, dim = c(nrow(data), ncol(data), 4))
+            ncells <- nrow(data) * ncol(data)
+            for (b in 1:3) {
+                layer <- numeric(ncells)
+                layer[nona] <- col_rgb[b, idx[nona]]
+                rgba[,,b] <- matrix(layer, nrow(data), ncol(data), byrow = TRUE)
+            }
+            rgba[,,4] <- matrix(as.numeric(nona), nrow(data), ncol(data), byrow = TRUE)
+            writePNG(rgba, savepath)
         },
         error = function(err) {
             logger::log_warn(paste("Failed to plot and save:", err$message))
@@ -70,6 +89,10 @@ combine_extra_geoms <- function(geom, extra_geom) {
 #' Squash vals into a range
 squash_vals <- function(r) {
     nona <- raster::values(r)[!is.na(raster::values(r))]
+    if (length(nona) == 0) {
+        logger::log_warn("squash_vals: all values are NA, returning raster unchanged")
+        return(r)
+    }
     maxx <- max(nona)
     minx <- min(nona)
     a <- 1
@@ -142,13 +165,13 @@ fetch_raster_inputs <- function(algorithm_parameters, groundrast, working_dir) {
     default_raster <- groundrast
     raster::values(default_raster) <- NA
     dtm_result <- read_db_raster_default(dtm_table, ext, database_host, database_name, 
-                        database_port, database_user, database_password, default_raster, resolution, TRUE)
+                        database_port, database_user, database_password, default_raster, resolution, FALSE)
     dtm <- dtm_result$raster
     dtm_failed <- dtm_result$failflag
 
     logger::log_info("Fetching dsm raster from db")
     dsm_result <- read_db_raster_default(dsm_table, ext, database_host, database_name,
-                        database_port, database_user, database_password, default_raster, resolution, TRUE)
+                        database_port, database_user, database_password, default_raster, resolution, FALSE)
     dsm <- dsm_result$raster
     dsm_failed <- dsm_result$failflag
 
@@ -158,16 +181,21 @@ fetch_raster_inputs <- function(algorithm_parameters, groundrast, working_dir) {
     logger::log_info("Resampling dsm raster")
     r_dsm <- raster::resample(dsm, groundrast)
 
-    logger::log_info("Fetching lcm raster from db")
+    logger::log_info("Fetching lcm raster from db (table: %s)", lcm_table)
     lcm_result <- read_db_raster_default(lcm_table, ext, database_host, database_name,
                         database_port, database_user, database_password, default_raster, resolution)
     lcm <- lcm_result$raster
     lcm_failed <- lcm_result$failflag
-    lcm_r <- raster::resample(lcm, groundrast)
+    if (lcm_failed) {
+        logger::log_warn("LCM raster fetch FAILED: no LCM data available for this extent")
+    } else {
+        logger::log_info("LCM raster fetch succeeded")
+    }
+    r_lcm <- raster::resample(lcm, groundrast)
 
     raster_failed <- dsm_failed | dtm_failed | lcm_failed
 
-    return(list(lcm_r=lcm_r, r_dtm=r_dtm, r_dsm=r_dsm, dsm=dsm, dtm=dtm, raster_failed=raster_failed))
+    return(list(r_lcm=r_lcm, r_dtm=r_dtm, r_dsm=r_dsm, dsm=dsm, dtm=dtm, raster_failed=raster_failed))
 }
 
 #' Get inputs for raster pipeline from db, and combining with inputs
@@ -198,7 +226,7 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
     rivers <- vector_inputs$rivers
     roads <- vector_inputs$roads
     buildingsvec <- vector_inputs$buildingsvec
-    lcm_r <- raster_inputs$lcm_r
+    r_lcm <- raster_inputs$r_lcm
     r_dtm <- raster_inputs$r_dtm
     r_dsm <- raster_inputs$r_dsm
 
@@ -223,7 +251,7 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
 
     logger::log_info(paste("Combining extra lights to ", nrow(lamps), " if there are any."))
     print(nrow(lamps))
-    if (nrow(spdfs$lights) > 0) {
+    if (!is.null(spdfs$lights) && nrow(spdfs$lights) > 0) {
         lamps <- rbind(lamps, spdfs$lights)
     }
 
@@ -236,7 +264,7 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
     # raster_failed <- dsm_failed | dtm_failed | lcm_failed
 
     # TODO: could replace with a struct
-    return(list(groundrast=groundrast, lcm_r=lcm_r, r_dtm=r_dtm, r_dsm=r_dsm, rivers=rivers, roads=roads,
+    return(list(groundrast=groundrast, r_lcm=r_lcm, r_dtm=r_dtm, r_dsm=r_dsm, rivers=rivers, roads=roads,
             buildingsvec=buildingsvec, buildingsrast=buildings, lamps=lamps,
             lamps=lamps, circles=circles, disk=disk))
 }
@@ -255,7 +283,7 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
     roads <- base_inputs$roads 
     buildings <- base_inputs$buildingsrast
     lamps <- base_inputs$lamps
-    lcm_r <- base_inputs$lcm_r
+    r_lcm <- base_inputs$r_lcm
     r_dtm <- base_inputs$r_dtm
     r_dsm <- base_inputs$r_dsm
     lamps <- base_inputs$lamps
@@ -273,7 +301,7 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
     surfs <- calc_surfs(r_dtm, r_dsm, buildings)
 
     logger::log_info("Calculating lcm resistance")
-    landscapeRes <- get_landscape_resistance_lcm(lcm_r, buildings, surfs$soft_surf, algorithm_parameters$landscapeResistance$rankmax,
+    landscapeRes <- get_landscape_resistance_lcm(r_lcm, buildings, surfs$soft_surf, algorithm_parameters$landscapeResistance$rankmax,
                                     algorithm_parameters$landscapeResistance$resmax, algorithm_parameters$landscapeResistance$xmax)
 
     logger::log_info("Calculating linear resistance")
@@ -340,7 +368,7 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
         save_image(landscapeRes, "landscapeRes.png", working_dir)
         save_image(linearRes, "linearRes.png", working_dir)
         save_image(lcm, "lcm.png", working_dir)
-        save_image(lcm_r, "lcm_r.png", working_dir)
+        save_image(r_lcm, "r_lcm.png", working_dir)
         save_image(roadRes, "roadRes.png", working_dir)
         save_image(riverRes, "riverRes.png", working_dir)
         save_image(log(point_irradiance), "logirradiance.png", working_dir)
@@ -351,6 +379,15 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
         save_image(log(totalRes_unnorm), "log_totalRes_unnorm.png", working_dir)
         save_image(log(totalRes), "log_resistance.png", working_dir)
         save_image(circles, "circles.png", working_dir)
+    }
+
+    n_total <- length(raster::values(totalRes))
+    n_valid <- sum(!is.na(raster::values(totalRes)))
+    pct <- round(100 * n_valid / n_total, 1)
+    if (pct < 50) {
+        logger::log_warn("Total resistance coverage: %d/%d pixels (%.1f%%) -- sparse data, check LiDAR coverage", n_valid, n_total, pct)
+    } else {
+        logger::log_info("Total resistance coverage: %d/%d pixels (%.1f%%)", n_valid, n_total, pct)
     }
 
     return(list(road_res=roadRes, buildings=buildings, river_res=riverRes, 
@@ -378,9 +415,23 @@ call_circuitscape <- function(working_dir, save_images) {
     # Create the call string
     Sys.unsetenv("LD_LIBRARY_PATH")
     compute <- paste0("compute(\"", working_dir, "/cs.ini\")")
-    call <- paste0("julia -e 'using Circuitscape; ", compute, "'")
+    call <- paste0("julia --project=/opt/julia -e 'using Circuitscape; ", compute, "' 2>&1")
+    logger::log_info("Running: %s", call)
 
-    system(call)
+    rc <- system(call, intern = TRUE)
+    rc_status <- attr(rc, "status")
+    rc_code <- if (is.null(rc_status)) 0 else rc_status
+
+    if (rc_code != 0) {
+        msg <- sprintf("Circuitscape failed with exit code %d", rc_code)
+        logger::log_error(msg)
+        logger::log_error("--- Julia output follows ---")
+        writeLines(rc, stderr())
+        logger::log_error("--- end Julia output ---")
+        stop(msg)
+    }
+
+    logger::log_info("Circuitscape completed successfully")
 
     current = raster(paste0(working_dir, "/circuitscape/cs_out_curmap.asc"))
     logCurrent = log(current + 1)

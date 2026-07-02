@@ -1,0 +1,78 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gcc \
+    g++ \
+    gettext-base \
+    gfortran \
+    libgdal-dev \
+    libgeos-dev \
+    libproj-dev \
+    libpq-dev \
+    libudunits2-dev \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libxml2-dev \
+    libuv1 \
+    make \
+    munge \
+    postgresql-client \
+    python3 \
+    python3-pip \
+    python3-dev \
+    r-base \
+    r-base-dev \
+    slurmd \
+    slurmctld \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+  RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake \
+    libabsl-dev
+
+# RUN echo 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest"))' >> /etc/R/Rprofile.site \
+#     && Rscript -e 'install.packages(c( \
+#   "raster","terra","sp","sf","rpostgis","DBI","RPostgres", \
+#   "R6","logger","glue","stringr","configr","Rcpp" \
+# ))'
+
+RUN echo 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/jammy/latest"))' >> /etc/R/Rprofile.site
+COPY .Rprofile.docker /app/.Rprofile
+COPY renv.lock /app/renv.lock
+COPY renv/ /app/renv/
+
+WORKDIR /app
+RUN Rscript -e "install.packages('renv')"
+RUN Rscript -e "renv::restore(library = '/usr/local/lib/R/site-library')"
+
+
+RUN curl -fsSL https://install.julialang.org | sh -s -- -y
+ENV PATH="/root/.juliaup/bin:${PATH}"
+COPY test/docker/JuliaProject.toml /opt/julia/
+RUN julia -e 'using Pkg; Pkg.activate("/opt/julia"); Pkg.instantiate()'
+
+COPY api/requirements.txt /tmp/
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+
+WORKDIR /app
+COPY api/ /app/api/
+COPY R/ /app/R/
+COPY scripts/ /app/scripts/
+COPY R/cs.ini.template /app/R/cs.ini.template
+COPY test/docker/batapp/bats.cfg.template /opt/bats.cfg.template
+RUN Rscript -e "install.packages('testthat')"
+
+COPY test/ /app/test/
+
+
+ENV PIPELINE_WORK_DIR=/tmp/circuitscape
+RUN mkdir -p "$PIPELINE_WORK_DIR"
+
+EXPOSE 8000
+
+COPY test/docker/backend-entrypoint.sh /opt/backend-entrypoint.sh
+RUN chmod +x /opt/backend-entrypoint.sh
+ENTRYPOINT ["/opt/backend-entrypoint.sh"]

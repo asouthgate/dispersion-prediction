@@ -86,6 +86,9 @@ read_db_vector <- function(table_name, ext, db_host, db_name, db_port, db_user, 
             # }
         }
     )
+    if (inherits(results_sf, "sf") || inherits(results_sf, "sfc")) {
+        results_sf <- sf::st_zm(results_sf)
+    }
     # sink(type="message")
     # close(tt)
     logger::log_info("Disconnecting...")
