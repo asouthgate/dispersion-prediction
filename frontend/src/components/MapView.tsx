@@ -14,7 +14,7 @@ import {
   type FeatureStyleConfig,
   type ResultPaint,
 } from '@gsbio/engine';
-import { POSITRON_STYLE } from '@gsbio/engine';
+import customStyle from '../styles/custom-map.json';
 import { Building04 } from 'react-coolicons';
 import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
@@ -165,7 +165,7 @@ export function MapView() {
   const renderer = useMemo<TerraDraw2DRenderer>(
     () =>
       createTerraDraw2DRenderer({
-        style: POSITRON_STYLE as never,
+        style: customStyle as never,
         center: CENTER,
         zoom: ZOOM,
         featureStyles,
