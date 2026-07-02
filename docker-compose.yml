@@ -55,7 +55,6 @@ services:
       PIPELINE_WORK_DIR: /tmp/circuitscape
       PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
     volumes:
-      - ./data/seed:/seed
       - pipeline_work:/tmp/circuitscape
 
   celery_worker:
