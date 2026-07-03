@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import config
-from routers import pipeline, rasters
+from routers import pipeline, rasters, auth, pmtiles
 
 config.setup_logging()
 
@@ -15,6 +15,7 @@ config.setup_logging()
 async def lifespan(app: FastAPI):
     # Create the pipeline work directory if it doesn't exist, it will be needed later
     os.makedirs(config.PIPELINE_WORK_DIR, exist_ok=True)
+    os.makedirs(config.PMTILES_DIR, exist_ok=True)
     yield
 
 
@@ -35,6 +36,8 @@ app.add_middleware(
 
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(rasters.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(pmtiles.router, prefix="/api")
 
 
 @app.get("/api/health")

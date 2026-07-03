@@ -7,10 +7,11 @@ import os
 import uuid
 
 from celery.result import AsyncResult
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from redis import Redis
 
 from celery_app import celery_app
+from middleware.auth import require_auth
 from schemas.pipeline import (
     PipelineRequest,
     PipelineStartResponse,
@@ -54,27 +55,27 @@ _STATE_MAP = {
 
 
 @router.post("/coverage", response_model=PipelineStartResponse)
-async def start_coverage(req: PipelineRequest):
+async def start_coverage(req: PipelineRequest, token: str = Depends(require_auth)):
     logger.info("POST /api/pipeline/coverage (roost=%s, features=%d)",
                 "set" if req.roost else "none", len(req.features))
-    return _start_pipeline("coverage", req)
+    return _start_pipeline("coverage", req, token)
 
 
 @router.post("/resistance", response_model=PipelineStartResponse)
-async def start_resistance(req: PipelineRequest):
+async def start_resistance(req: PipelineRequest, token: str = Depends(require_auth)):
     logger.info("POST /api/pipeline/resistance (roost=%s, features=%d)",
                 "set" if req.roost else "none", len(req.features))
-    return _start_pipeline("resistance", req)
+    return _start_pipeline("resistance", req, token)
 
 
 @router.post("/current", response_model=PipelineStartResponse)
-async def start_current(req: PipelineRequest):
+async def start_current(req: PipelineRequest, token: str = Depends(require_auth)):
     logger.info("POST /api/pipeline/current (roost=%s, features=%d)",
                 "set" if req.roost else "none", len(req.features))
-    return _start_pipeline("current", req)
+    return _start_pipeline("current", req, token)
 
 
-def _start_pipeline(stage: str, req: PipelineRequest) -> PipelineStartResponse:
+def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> PipelineStartResponse:
     roost = req.roost.model_dump() if req.roost else None
     features = [f.model_dump() for f in req.features]
     params = dict(req.params)
@@ -101,6 +102,7 @@ def _start_pipeline(stage: str, req: PipelineRequest) -> PipelineStartResponse:
         _dedup_client().set(dedup_key, task_id, ex=DEDUP_TTL_SECONDS, nx=True)
         reverse_key = f"task_to_hash:{task_id}"
         _dedup_client().set(reverse_key, payload_hash, ex=DEDUP_TTL_SECONDS)
+        _dedup_client().set(f"job:owner:{task_id}", token, ex=DEDUP_TTL_SECONDS)
 
     except Exception as e:
         logger.error("Failed to write dedup keys to Redis: %s", e)
@@ -162,7 +164,14 @@ async def get_job_status(job_id: str):
 
 
 @router.delete("/{job_id}")
-async def cancel_job(job_id: str, redis: Redis = Depends(_dedup_client)):
+async def cancel_job(job_id: str, token: str = Depends(require_auth), redis: Redis = Depends(_dedup_client)):
+    owner = redis.get(f"job:owner:{job_id}")
+    if owner and owner != token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only cancel your own jobs",
+        )
+
     celery_app.control.revoke(job_id, terminate=True, signal="SIGTERM")
 
     reverse_key = f"task_to_hash:{job_id}"
@@ -170,6 +179,7 @@ async def cancel_job(job_id: str, redis: Redis = Depends(_dedup_client)):
     if payload_hash:
         redis.delete(f"dedup:{payload_hash}")
         redis.delete(reverse_key)
+        redis.delete(f"job:owner:{job_id}")
 
     logger.info("Job %s cancelled and dedup cleared", job_id)
     return {"job_id": job_id, "status": "cancelled"}

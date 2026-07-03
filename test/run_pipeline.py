@@ -21,6 +21,28 @@ DEFAULT_API = os.environ.get("API_BASE", "http://localhost:8000")
 POLL_INTERVAL = 2
 MAX_POLLS = 300
 
+_session_token: str | None = None
+
+
+def get_token(base: str) -> str:
+    global _session_token
+    if _session_token:
+        return _session_token
+    req = urllib.request.Request(
+        f"{base}/api/auth/token",
+        data=b"",
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        _session_token = data["token"]
+        return _session_token
+
+
+def auth_header(base: str) -> dict[str, str]:
+    token = get_token(base)
+    return {"Authorization": f"Bearer {token}"}
+
 TEST_ROOST = {
     "lng": -3.590523,
     "lat": 50.586362,
@@ -55,10 +77,13 @@ TEST_LIGHT_FEATURES = [
 
 
 def api_post(url: str, data: dict[str, Any]) -> dict[str, Any]:
+    headers = {"Content-Type": "application/json"}
+    if _session_token:
+        headers["Authorization"] = f"Bearer {_session_token}"
     req = urllib.request.Request(
         url,
         data=json.dumps(data).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
@@ -66,7 +91,11 @@ def api_post(url: str, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def api_get(url: str) -> dict[str, Any]:
-    with urllib.request.urlopen(url, timeout=10) as resp:
+    headers = {}
+    if _session_token:
+        headers["Authorization"] = f"Bearer {_session_token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -81,6 +110,14 @@ def check_health(base: str):
         health = api_get(f"{base}/api/health")
         assert health["status"] == "ok", f"Health check failed: {health}"
         print("  OK")
+    except Exception as e:
+        print(f"  FAIL: {e}")
+        sys.exit(1)
+
+    print("  Acquiring session token...")
+    try:
+        get_token(base)
+        print("  Token acquired")
     except Exception as e:
         print(f"  FAIL: {e}")
         sys.exit(1)

@@ -7,6 +7,7 @@ CORS_ORIGINS = [origin.strip() for origin in cors_env.split(",") if origin.strip
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 PIPELINE_WORK_DIR = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
+PMTILES_DIR = os.environ.get("PMTILES_DIR", "/data/pmtiles")
 
 PIPELINE_TIMEOUT = int(os.environ.get("PIPELINE_TIMEOUT", "1800"))
 
