@@ -8,6 +8,7 @@ import {
   type DataFeature,
   destinationPoint,
   createPmtilesStyle,
+  OSM_LIBERTY_STYLE,
 } from '@gsbio/engine';
 import {
   createTerraDraw2DRenderer,
@@ -19,9 +20,13 @@ import { Building04 } from 'react-coolicons';
 import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
 import { Sun } from 'react-coolicons';
+import { getTokenSync, ensureValidToken } from '../auth';
 
 const CENTER: [number, number] = [-3.590523, 50.586362];
 const ZOOM = 13;
+/** Map zoom limits — the `uk.pmtiles` archive only carries z0-14 vector tiles. */
+const MIN_ZOOM = 0;
+const MAX_ZOOM = 14;
 
 const API_BASE = '/api';
 const PMTILES_FILENAME = 'uk.pmtiles';
@@ -158,12 +163,15 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
 export function MapView() {
   const renderer = useMemo<TerraDraw2DRenderer>(() => {
     return createTerraDraw2DRenderer({
-      style: createPmtilesStyle(`${API_BASE}/pmtiles/${PMTILES_FILENAME}`),
+      style: createPmtilesStyle(OSM_LIBERTY_STYLE, `${API_BASE}/pmtiles/${PMTILES_FILENAME}`),
       center: CENTER,
       zoom: ZOOM,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
       featureStyles,
       resultStyles,
-      getToken: () => sessionStorage.getItem('session_token'),
+      getToken: getTokenSync,
+      refreshToken: () => ensureValidToken(true),
     });
   }, []);
 

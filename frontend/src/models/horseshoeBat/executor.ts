@@ -6,6 +6,7 @@ import type {
 } from '@gsbio/engine';
 import type { PipelineStage } from './model';
 import { horseshoeBatModel } from './model';
+import { fetchWithAuth } from '../../auth';
 
 const API_BASE = '/api';
 
@@ -70,7 +71,7 @@ function featureToPayload(f: DataFeature): FeaturePayload {
   };
 }
 
-export function createHorseshoeBatExecutor(getStage: () => PipelineStage, getToken: () => string | null): Executor {
+export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Executor {
   return {
     async preprocess(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -87,15 +88,12 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage, getTok
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
       const { stage, roost, features, params } = ctx.payload as PipelinePayload;
-      const token = getToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features`);
 
-      const startRes = await fetch(`${API_BASE}/pipeline/${stage}`, {
+      const startRes = await fetchWithAuth(`${API_BASE}/pipeline/${stage}`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roost, features, params }),
         signal,
       });
@@ -107,9 +105,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage, getTok
       const MAX_POLLS = 300;
 
       const onAbort = () => {
-        const abortHeaders: Record<string, string> = {};
-        if (token) abortHeaders['Authorization'] = `Bearer ${token}`;
-        fetch(`${API_BASE}/pipeline/${job_id}`, { method: 'DELETE', headers: abortHeaders }).catch(() => {});
+        fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { method: 'DELETE' }).catch(() => {});
       };
       signal.addEventListener('abort', onAbort, { once: true });
 
@@ -119,9 +115,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage, getTok
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           await delay(POLL_INTERVAL_MS, signal);
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          const pollHeaders: Record<string, string> = {};
-          if (token) pollHeaders['Authorization'] = `Bearer ${token}`;
-          const res = await fetch(`${API_BASE}/pipeline/${job_id}`, { headers: pollHeaders, signal });
+          const res = await fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { signal });
           if (!res.ok) throw new Error(`Poll failed: ${res.status}`);
           job = (await res.json()) as JobStatus;
           ctx.onProgress?.({ step: 'submit', fraction: job.progress, label: job.progress_label });
@@ -167,8 +161,8 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export function installHorseshoeBat(engine: SimulationEngine, getStage: () => PipelineStage, getToken: () => string | null): void {
+export function installHorseshoeBat(engine: SimulationEngine, getStage: () => PipelineStage): void {
   engine.registerModel(horseshoeBatModel);
-  engine.registerExecutor(horseshoeBatModel.id, createHorseshoeBatExecutor(getStage, getToken));
+  engine.registerExecutor(horseshoeBatModel.id, createHorseshoeBatExecutor(getStage));
   engine.setModel(horseshoeBatModel.id);
 }
