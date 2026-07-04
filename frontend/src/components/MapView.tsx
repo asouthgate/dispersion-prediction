@@ -27,6 +27,7 @@ const ZOOM = 13;
 /** Map zoom limits — the `uk.pmtiles` archive only carries z0-14 vector tiles. */
 const MIN_ZOOM = 0;
 const MAX_ZOOM = 14;
+const MAX_BOUNDS: [[number, number], [number, number]] = [[-14, 49.5], [4, 61.5]];
 
 const API_BASE = '/api';
 const PMTILES_FILENAME = 'uk.pmtiles';
@@ -168,6 +169,7 @@ export function MapView() {
       zoom: ZOOM,
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
+      maxBounds: MAX_BOUNDS,
       featureStyles,
       resultStyles,
       getToken: getTokenSync,
