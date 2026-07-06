@@ -65,22 +65,22 @@ class JobLifecycleTests(unittest.TestCase):
 
     def test_cancel_endpoint_revokes_task(self):
         """The DELETE endpoint calls celery_app.control.revoke with terminate."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import AsyncMock, patch
         import routers.pipeline as p
 
-        fake_redis = MagicMock()
-        fake_redis.get.return_value = None
-        fake_redis.set.return_value = True
+        fake_redis = AsyncMock()
+        fake_redis.get.return_value = "fake-token"
+        fake_redis.delete = AsyncMock()
 
-        with patch.object(p, "_dedup_client", return_value=fake_redis):
+        with patch.object(p, "_get_dedup_redis", return_value=fake_redis):
             with patch("routers.pipeline.AsyncResult") as mock_async:
-                mock_result = MagicMock()
+                mock_result = AsyncMock()
                 mock_result.state = "STARTED"
                 mock_async.return_value = mock_result
 
                 with patch("routers.pipeline.celery_app.control.revoke") as mock_revoke:
                     import asyncio
-                    asyncio.run(p.cancel_job("fake-task-id", redis=fake_redis))
+                    asyncio.run(p.cancel_job("fake-task-id", token="fake-token"))
 
             mock_revoke.assert_called_once_with("fake-task-id", terminate=True, signal="SIGTERM")
 

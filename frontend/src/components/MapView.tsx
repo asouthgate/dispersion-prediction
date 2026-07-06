@@ -7,6 +7,8 @@ import {
   useEngine,
   type DataFeature,
   destinationPoint,
+  createPmtilesStyle,
+  OSM_LIBERTY_STYLE,
 } from '@gsbio/engine';
 import {
   createTerraDraw2DRenderer,
@@ -14,14 +16,21 @@ import {
   type FeatureStyleConfig,
   type ResultPaint,
 } from '@gsbio/engine';
-import { POSITRON_STYLE } from '@gsbio/engine';
 import { Building04 } from 'react-coolicons';
 import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
 import { Sun } from 'react-coolicons';
+import { getTokenSync, ensureValidToken } from '../auth';
 
 const CENTER: [number, number] = [-3.590523, 50.586362];
 const ZOOM = 13;
+/** Map zoom limits — the `uk.pmtiles` archive only carries z0-14 vector tiles. */
+const MIN_ZOOM = 0;
+const MAX_ZOOM = 14;
+const MAX_BOUNDS: [[number, number], [number, number]] = [[-14, 49.5], [4, 61.5]];
+
+const API_BASE = '/api';
+const PMTILES_FILENAME = 'uk.pmtiles';
 
 const iconStyle = { width: 18, height: 18 };
 
@@ -74,15 +83,6 @@ const CROSS_COLOR = '#999';
 const RECT_LINE_WIDTH = 1;
 const CROSS_LINE_WIDTH = 0.5;
 
-type MapRef = {
-  getStyle(): { layers: Array<{ id: string }> };
-  addSource(id: string, source: unknown): void;
-  addLayer(layer: unknown, beforeId?: string): void;
-  removeLayer(id: string): void;
-  removeSource(id: string): void;
-  getSource(id: string): { setData(data: unknown): void } | undefined;
-};
-
 function cardinal(p: { lng: number; lat: number }, r: number, bearing: number) { return destinationPoint(p, r, bearing); }
 
 function rectGeom(center: { lng: number; lat: number }, radius: number): GeoJSON.Geometry {
@@ -107,21 +107,21 @@ function crosshairGeom(center: { lng: number; lat: number }, radius: number): Ge
   };
 }
 
-function createRoostLayers(map: MapRef) {
-  const beforeId = map.getStyle().layers.find((l) => l.id.startsWith('td-'))?.id;
+function createRoostLayers(map: any) {
+  const beforeId = map.getStyle().layers.find((l: { id: string }) => l.id.startsWith('td-'))?.id;
   map.addLayer({ id: ROOST_RECT_FILL, type: 'fill', source: ROOST_RECT_SOURCE, paint: { 'fill-color': ROOST_COLOR, 'fill-opacity': 0.04 } }, beforeId);
   map.addLayer({ id: ROOST_RECT_LINE, type: 'line', source: ROOST_RECT_SOURCE, paint: { 'line-color': ROOST_COLOR, 'line-width': RECT_LINE_WIDTH } }, beforeId);
   map.addLayer({ id: ROOST_CROSS_LINE, type: 'line', source: ROOST_CROSS_SOURCE, paint: { 'line-color': CROSS_COLOR, 'line-width': CROSS_LINE_WIDTH } }, beforeId);
 }
 
-function setRoostData(map: MapRef, center: { lng: number; lat: number }, radius: number) {
+function setRoostData(map: any, center: { lng: number; lat: number }, radius: number) {
   const src = map.getSource(ROOST_RECT_SOURCE);
   if (src) src.setData({ type: 'Feature' as const, geometry: rectGeom(center, radius), properties: {} });
   const cross = map.getSource(ROOST_CROSS_SOURCE);
   if (cross) cross.setData({ type: 'Feature' as const, geometry: crosshairGeom(center, radius), properties: {} });
 }
 
-function destroyRoostLayers(map: MapRef) {
+function destroyRoostLayers(map: any) {
   try { map.removeLayer(ROOST_CROSS_LINE); } catch {}
   try { map.removeLayer(ROOST_RECT_LINE); } catch {}
   try { map.removeLayer(ROOST_RECT_FILL); } catch {}
@@ -162,17 +162,20 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
 }
 
 export function MapView() {
-  const renderer = useMemo<TerraDraw2DRenderer>(
-    () =>
-      createTerraDraw2DRenderer({
-        style: POSITRON_STYLE as never,
-        center: CENTER,
-        zoom: ZOOM,
-        featureStyles,
-        resultStyles,
-      }),
-    [],
-  );
+  const renderer = useMemo<TerraDraw2DRenderer>(() => {
+    return createTerraDraw2DRenderer({
+      style: createPmtilesStyle(OSM_LIBERTY_STYLE, `${API_BASE}/pmtiles/${PMTILES_FILENAME}`),
+      center: CENTER,
+      zoom: ZOOM,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      maxBounds: MAX_BOUNDS,
+      featureStyles,
+      resultStyles,
+      getToken: getTokenSync,
+      refreshToken: () => ensureValidToken(true),
+    });
+  }, []);
 
   return (
     <MapScene renderer={renderer}>

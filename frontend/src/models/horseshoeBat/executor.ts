@@ -6,6 +6,7 @@ import type {
 } from '@gsbio/engine';
 import type { PipelineStage } from './model';
 import { horseshoeBatModel } from './model';
+import { fetchWithAuth } from '../../auth';
 
 const API_BASE = '/api';
 
@@ -90,7 +91,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
 
       ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features`);
 
-      const startRes = await fetch(`${API_BASE}/pipeline/${stage}`, {
+      const startRes = await fetchWithAuth(`${API_BASE}/pipeline/${stage}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roost, features, params }),
@@ -104,7 +105,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
       const MAX_POLLS = 300;
 
       const onAbort = () => {
-        fetch(`${API_BASE}/pipeline/${job_id}`, { method: 'DELETE' }).catch(() => {});
+        fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { method: 'DELETE' }).catch(() => {});
       };
       signal.addEventListener('abort', onAbort, { once: true });
 
@@ -114,7 +115,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           await delay(POLL_INTERVAL_MS, signal);
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          const res = await fetch(`${API_BASE}/pipeline/${job_id}`, { signal });
+          const res = await fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { signal });
           if (!res.ok) throw new Error(`Poll failed: ${res.status}`);
           job = (await res.json()) as JobStatus;
           ctx.onProgress?.({ step: 'submit', fraction: job.progress, label: job.progress_label });

@@ -37,6 +37,12 @@ python3 test/run_pipeline.py --api-base "$API_URL" --stage resistance --out "$OU
 echo "Running current (circuitscape) pipeline"
 python3 test/run_pipeline.py --api-base "$API_URL" --stage current --out "$OUTPUT_DIR/current/"
 
+echo "Testing PMTiles endpoint"
+python3 test/test_pmtiles.py --api-base "$API_URL" --frontend-base "http://localhost:5180" --pmtiles-file test.pmtiles
+
+echo "Running full-stack integration test"
+python3 test/test_integration.py --api-base "$API_URL" --frontend-base "http://localhost:5180" --pmtiles-file test.pmtiles
+
 echo "Copying outputs from container"
 # Results live in hash-based dirs: copy all job output dirs
 mkdir -p "$OUTPUT_DIR/container"
