@@ -10,6 +10,13 @@ PIPELINE_WORK_DIR = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
 PMTILES_DIR = os.environ.get("PMTILES_DIR", "/data/pmtiles")
 
 PIPELINE_TIMEOUT = int(os.environ.get("PIPELINE_TIMEOUT", "1800"))
+TOKEN_TTL_SECONDS = int(os.environ.get("AUTH_TOKEN_TTL_SECONDS", "86400"))
+
+_broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+AUTH_REDIS_URL = os.environ.get("AUTH_REDIS_URL", _broker_url)
+_result_backend = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+
+RATE_LIMIT_TOKENS_PER_MINUTE = int(os.environ.get("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
 
 
 def _load_bats_cfg() -> dict[str, str]:

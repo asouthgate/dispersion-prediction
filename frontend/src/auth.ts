@@ -10,8 +10,9 @@
 const API_BASE = '/api';
 const TOKEN_KEY = 'session_token';
 const EXPIRY_KEY = 'session_token_expires_at';
-/** Re-issue a bit before the real expiry to avoid races. */
 const SAFETY_MARGIN_MS = 60_000;
+
+let mintingPromise: Promise<string | null> | null = null;
 
 export function getStoredToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY);
@@ -37,7 +38,7 @@ export function clearToken(): void {
 }
 
 /** Mints a brand-new token from the server (unauthenticated endpoint). */
-export async function mintToken(): Promise<string | null> {
+async function _mintToken(): Promise<string | null> {
   try {
     const res = await fetch(`${API_BASE}/auth/token`, { method: 'POST' });
     if (!res.ok) return null;
@@ -48,6 +49,12 @@ export async function mintToken(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+export async function mintToken(): Promise<string | null> {
+  if (mintingPromise) return mintingPromise;
+  mintingPromise = _mintToken().finally(() => { mintingPromise = null; });
+  return mintingPromise;
 }
 
 /**
