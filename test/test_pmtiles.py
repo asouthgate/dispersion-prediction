@@ -17,6 +17,7 @@ import json
 
 DEFAULT_API = "http://localhost:8000"
 DEFAULT_FRONTEND = "http://localhost:5180"
+DEFAULT_PMTILES_FILE = "test.pmtiles"
 
 
 def get_token(base: str) -> str:
@@ -29,11 +30,11 @@ def get_token(base: str) -> str:
         return json.loads(resp.read().decode("utf-8"))["token"]
 
 
-def test_pmtiles_via_api(base: str, token: str):
+def test_pmtiles_via_api(base: str, token: str, pmtiles_file: str):
     """Test the PMTiles endpoint directly against the API."""
-    print("\n[PMTiles] Testing /api/pmtiles endpoint (direct API)...")
+    print(f"\n[PMTiles] Testing /api/pmtiles endpoint (direct API) [{pmtiles_file}]...")
 
-    url = f"{base}/api/pmtiles/uk.pmtiles"
+    url = f"{base}/api/pmtiles/{pmtiles_file}"
 
     req = urllib.request.Request(url, headers={"Range": "bytes=0-7", "Authorization": f"Bearer {token}"})
     try:
@@ -53,7 +54,7 @@ def test_pmtiles_via_api(base: str, token: str):
         sys.exit(1)
 
     # Test without token
-    no_token_url = f"{base}/api/pmtiles/uk.pmtiles"
+    no_token_url = f"{base}/api/pmtiles/{pmtiles_file}"
     try:
         urllib.request.urlopen(no_token_url, timeout=10)
         print("  FAIL: expected 401 without token")
@@ -66,13 +67,13 @@ def test_pmtiles_via_api(base: str, token: str):
             sys.exit(1)
 
 
-def test_pmtiles_via_frontend(frontend_base: str, api_base: str, token: str):
+def test_pmtiles_via_frontend(frontend_base: str, api_base: str, token: str, pmtiles_file: str):
     """Integration test: hit the frontend nginx proxy to verify the full path
     that the browser actually uses to load the PMTiles basemap."""
-    print("\n[PMTiles] Integration test via frontend nginx proxy...")
+    print(f"\n[PMTiles] Integration test via frontend nginx proxy [{pmtiles_file}]...")
 
     # The frontend loads the pmtiles file through nginx's /api/ proxy
-    url = f"{frontend_base}/api/pmtiles/uk.pmtiles"
+    url = f"{frontend_base}/api/pmtiles/{pmtiles_file}"
 
     req = urllib.request.Request(url, headers={"Range": "bytes=0-7", "Authorization": f"Bearer {token}"})
     try:
@@ -95,7 +96,7 @@ def test_pmtiles_via_frontend(frontend_base: str, api_base: str, token: str):
         sys.exit(1)
 
     # Also test that unauthenticated requests through nginx get 401
-    no_token_url = f"{frontend_base}/api/pmtiles/uk.pmtiles"
+    no_token_url = f"{frontend_base}/api/pmtiles/{pmtiles_file}"
     try:
         urllib.request.urlopen(no_token_url, timeout=10)
         print("  FAIL: expected 401 without token (via nginx)")
@@ -112,14 +113,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-base", default=DEFAULT_API)
     parser.add_argument("--frontend-base", default=DEFAULT_FRONTEND)
+    parser.add_argument("--pmtiles-file", default=DEFAULT_PMTILES_FILE)
     args = parser.parse_args()
     base = args.api_base.rstrip("/")
     frontend = args.frontend_base.rstrip("/")
+    pmtiles_file = args.pmtiles_file
 
     token = get_token(base)
 
-    test_pmtiles_via_api(base, token)
-    test_pmtiles_via_frontend(frontend, base, token)
+    test_pmtiles_via_api(base, token, pmtiles_file)
+    test_pmtiles_via_frontend(frontend, base, token, pmtiles_file)
 
 
 if __name__ == "__main__":

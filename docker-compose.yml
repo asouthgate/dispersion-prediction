@@ -58,6 +58,7 @@ services:
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+      - ./test/data/test.pmtiles:/data/pmtiles/test.pmtiles:ro
 
   celery_worker:
     image: dispersion-prediction-app-api
@@ -81,6 +82,7 @@ services:
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+      - ./test/data/test.pmtiles:/data/pmtiles/test.pmtiles:ro
     working_dir: /app/api
     command: >
       celery -A celery_app worker

@@ -63,7 +63,7 @@ COPY R/ /app/R/
 COPY scripts/ /app/scripts/
 COPY R/cs.ini.template /app/R/cs.ini.template
 COPY test/docker/batapp/bats.cfg.template /opt/bats.cfg.template
-RUN Rscript -e "install.packages('testthat')"
+RUN Rscript -e "options(interactive = FALSE); install.packages('testthat', clean = TRUE)"
 
 COPY test/ /app/test/
 

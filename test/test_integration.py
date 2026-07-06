@@ -22,6 +22,7 @@ import urllib.error
 
 DEFAULT_API = "http://localhost:8000"
 DEFAULT_FRONTEND = "http://localhost:5180"
+DEFAULT_PMTILES_FILE = "test.pmtiles"
 MAX_RETRIES = 30
 RETRY_INTERVAL = 2
 
@@ -77,10 +78,10 @@ def test_auth_token(base: str) -> str:
         sys.exit(1)
 
 
-def test_pmtiles_direct_api(base: str, token: str) -> bool:
-    print("\n[3] PMTiles endpoint (direct API)...")
+def test_pmtiles_direct_api(base: str, token: str, pmtiles_file: str) -> bool:
+    print(f"\n[3] PMTiles endpoint (direct API) [{pmtiles_file}]...")
 
-    url = f"{base}/api/pmtiles/uk.pmtiles"
+    url = f"{base}/api/pmtiles/{pmtiles_file}"
     req = urllib.request.Request(url, headers={"Range": "bytes=0-7", "Authorization": f"Bearer {token}"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -100,7 +101,7 @@ def test_pmtiles_direct_api(base: str, token: str) -> bool:
 
     # Unauthenticated should fail
     try:
-        urllib.request.urlopen(f"{base}/api/pmtiles/uk.pmtiles", timeout=10)
+        urllib.request.urlopen(f"{base}/api/pmtiles/{pmtiles_file}", timeout=10)
         print("  FAIL: expected 401 without token")
         return False
     except urllib.error.HTTPError as e:
@@ -111,10 +112,10 @@ def test_pmtiles_direct_api(base: str, token: str) -> bool:
         return False
 
 
-def test_pmtiles_via_nginx(frontend_base: str, token: str) -> bool:
-    print("\n[4] PMTiles endpoint via nginx proxy (frontend path)...")
+def test_pmtiles_via_nginx(frontend_base: str, token: str, pmtiles_file: str) -> bool:
+    print(f"\n[4] PMTiles endpoint via nginx proxy (frontend path) [{pmtiles_file}]...")
 
-    url = f"{frontend_base}/api/pmtiles/uk.pmtiles"
+    url = f"{frontend_base}/api/pmtiles/{pmtiles_file}"
     req = urllib.request.Request(url, headers={"Range": "bytes=0-7", "Authorization": f"Bearer {token}"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -135,7 +136,7 @@ def test_pmtiles_via_nginx(frontend_base: str, token: str) -> bool:
 
     # Unauthenticated via nginx should fail
     try:
-        urllib.request.urlopen(f"{frontend_base}/api/pmtiles/uk.pmtiles", timeout=10)
+        urllib.request.urlopen(f"{frontend_base}/api/pmtiles/{pmtiles_file}", timeout=10)
         print("  FAIL: expected 401 without token via nginx")
         return False
     except urllib.error.HTTPError as e:
@@ -171,9 +172,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-base", default=DEFAULT_API)
     parser.add_argument("--frontend-base", default=DEFAULT_FRONTEND)
+    parser.add_argument("--pmtiles-file", default=DEFAULT_PMTILES_FILE)
     args = parser.parse_args()
     base = args.api_base.rstrip("/")
     frontend = args.frontend_base.rstrip("/")
+    pmtiles_file = args.pmtiles_file
 
     print("=== Full-Stack Integration Test ===")
     print(f"API: {base}")
@@ -187,8 +190,8 @@ def main():
 
     token = test_auth_token(base)
 
-    results.append(("PMTiles direct API", test_pmtiles_direct_api(base, token)))
-    results.append(("PMTiles via nginx", test_pmtiles_via_nginx(frontend, token)))
+    results.append(("PMTiles direct API", test_pmtiles_direct_api(base, token, pmtiles_file)))
+    results.append(("PMTiles via nginx", test_pmtiles_via_nginx(frontend, token, pmtiles_file)))
     results.append(("Frontend page", test_frontend_page(frontend)))
 
     print("\n" + "=" * 50)
