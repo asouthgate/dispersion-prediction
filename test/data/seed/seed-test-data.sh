@@ -23,6 +23,9 @@ fi
 
 echo "=== seeding ==="
 
+echo "[umami database]..."
+"${PSQL[@]}" -q -c "CREATE DATABASE umami" 2>/dev/null || true
+
 for table in roads rivers buildings; do
     echo "[$table]..."
     shp2pgsql -s 27700 -c -I -D "$SEED_DIR/gis/$table/$table.shp" "$table"  2>/dev/null | "${PSQL[@]}" -q >/dev/null

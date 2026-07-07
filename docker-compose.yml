@@ -124,28 +124,14 @@ services:
     ports:
       - "5180:80"
 
-  umami-db-init:
-    image: postgres:16-alpine
-    depends_on:
-      postgis:
-        condition: service_healthy
-    profiles: ["analytics"]
-    environment:
-      PGHOST: postgis
-      PGUSER: ${DATABASE_USER:-bats}
-      PGPASSWORD: ${DATABASE_PASSWORD:-bats}
-      PGDATABASE: postgres
-    command: >
-      sh -c 'createdb umami 2>/dev/null || true; echo "umami db init done"'
-
   umami:
     image: docker.umami.is/umami-software/umami:postgresql-latest
     profiles: ["analytics"]
     ports:
       - "127.0.0.1:3001:3000"
     depends_on:
-      umami-db-init:
-        condition: service_completed_successfully
+      postgis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${DATABASE_USER:-bats}:${DATABASE_PASSWORD:-bats}@postgis:5432/umami
       APP_SECRET: ${UMAMI_APP_SECRET:-change-me-in-production}

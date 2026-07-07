@@ -1,9 +1,11 @@
+import concurrent.futures
 import hashlib
 import json
 import logging
 import os
 import threading
 import time as _time
+import urllib.error
 import urllib.request
 from datetime import date
 
@@ -11,12 +13,13 @@ logger = logging.getLogger(__name__)
 
 _UMAMI_URL = os.environ.get("UMAMI_URL", "").rstrip("/")
 _APP_HOSTNAME = os.environ.get("ANALYTICS_HOSTNAME", "bat-dispersion-app")
-_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+_USER_AGENT = "DispersionAppBackend/1.0 (Analytics Client)"
 
 _website_id = os.environ.get("UMAMI_WEBSITE_ID", "")
 _lock = threading.Lock()
 _init_done = bool(_website_id)
-_did_try_init = False if not _init_done else True
+
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="analytics")
 
 
 def daily_token_hash(token: str) -> str:
@@ -43,7 +46,11 @@ def _redis_cache() -> object | None:
         import redis
         _redis_url = os.environ.get("AUTH_REDIS_URL", os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/9"))
         return redis.Redis.from_url(_redis_url, decode_responses=True)
+    except ImportError:
+        logger.debug("redis package not installed, caching disabled")
+        return None
     except Exception:
+        logger.warning("Failed to connect to Redis for analytics cache", exc_info=True)
         return None
 
 
@@ -59,13 +66,16 @@ def _admin_request(method: str, path: str, token: str | None = None, body: dict 
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
-    except Exception as e:
-        logger.debug("Umami admin request %s %s failed: %s", method, path, e)
+    except urllib.error.URLError as e:
+        logger.warning("Umami admin request %s %s failed (network): %s", method, path, e)
+        return None
+    except json.JSONDecodeError as e:
+        logger.warning("Umami admin request %s %s returned invalid JSON: %s", method, path, e)
         return None
 
 
 def _ensure_website() -> None:
-    global _website_id, _init_done, _did_try_init
+    global _website_id, _init_done
 
     if _init_done:
         return
@@ -73,7 +83,6 @@ def _ensure_website() -> None:
     with _lock:
         if _init_done:
             return
-        _did_try_init = True
 
         if _website_id:
             _init_done = True
@@ -93,7 +102,7 @@ def _ensure_website() -> None:
                     logger.info("Umami website ID loaded from Redis: %s", _website_id)
                     return
             except Exception:
-                pass
+                logger.warning("Redis cache read failed for analytics", exc_info=True)
 
         admin_user = os.environ.get("UMAMI_ADMIN_USER", "admin")
         admin_pass = os.environ.get("UMAMI_ADMIN_PASSWORD", "umami")
@@ -135,7 +144,7 @@ def _ensure_website() -> None:
             try:
                 cache.set("umami:website_id", _website_id)
             except Exception:
-                pass
+                logger.warning("Redis cache write failed for analytics", exc_info=True)
 
         _init_done = True
 
@@ -152,8 +161,8 @@ def _post_umami(payload_bytes: bytes) -> None:
             method="POST",
         )
         urllib.request.urlopen(req, timeout=5)
-    except Exception:
-        logger.debug("Umami event send failed", exc_info=True)
+    except urllib.error.URLError:
+        logger.warning("Umami event send failed (network)", exc_info=True)
 
 
 def _fire(payload: dict) -> None:
@@ -161,7 +170,7 @@ def _fire(payload: dict) -> None:
     if not _website_id or not _UMAMI_URL:
         return
     data = json.dumps(payload, default=str).encode("utf-8")
-    threading.Thread(target=_post_umami, args=(data,), daemon=True).start()
+    _executor.submit(_post_umami, data)
 
 
 def _emit_event(name: str, event_data: dict | None = None, user_id: str | None = None) -> None:

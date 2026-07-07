@@ -1,5 +1,4 @@
 import os
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from routers import analytics, pipeline, rasters, auth, pmtiles
-from services.analytics import ensure_umami_website
 
 config.setup_logging()
 
@@ -18,8 +16,6 @@ async def lifespan(app: FastAPI):
     # Create the pipeline work directory if it doesn't exist, it will be needed later
     os.makedirs(config.PIPELINE_WORK_DIR, exist_ok=True)
     os.makedirs(config.PMTILES_DIR, exist_ok=True)
-
-    threading.Thread(target=ensure_umami_website, daemon=True).start()
 
     yield
 
