@@ -6,6 +6,7 @@ import { App } from './App';
 import { installHorseshoeBat } from './models/horseshoeBat';
 import type { PipelineStage } from './models/horseshoeBat';
 import { ensureValidToken } from './auth';
+import { trackPageview } from './analytics';
 import './styles/index.css';
 
 export function AppRoot() {
@@ -15,7 +16,10 @@ export function AppRoot() {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    ensureValidToken().then(setToken).catch(console.error);
+    ensureValidToken().then(t => {
+      setToken(t);
+      if (t) trackPageview();
+    }).catch(console.error);
   }, []);
 
   const [engine] = useState(() => {

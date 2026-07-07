@@ -1,4 +1,15 @@
+import { useState } from 'react';
+import { getConsent, setConsent } from '../analytics';
+
 export function HelpPanel() {
+  const [consent, setConsentState] = useState(() => getConsent());
+
+  const handleToggle = () => {
+    const next = !consent;
+    setConsent(next);
+    setConsentState(next);
+  };
+
   return (
     <div className="help-content">
       <p><b>1. Check the <a href="https://github.com/js01/dispersion-prediction-app/wiki/Tutorial" target="_blank" rel="noopener noreferrer">tutorial</a> for more information.</b></p>
@@ -11,6 +22,20 @@ export function HelpPanel() {
       <p><b>A light string</b> can be created by drawing a line with the LightString tool and setting the spacing in the Drawings panel.</p>
       <p>For more information on methods, see <a href="https://link.springer.com/article/10.1007/s10980-019-00953-1" target="_blank" rel="noopener noreferrer">this paper</a>.</p>
       <p>Encountered a bug? Submit an issue on <a href="https://github.com/js01/dispersion-prediction-app/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>
+      <hr />
+      <p><b>Privacy &amp; analytics</b></p>
+      <p>We collect anonymous usage data to demonstrate impact to funders and improve the service. This includes page visits, pipeline stage counts, and success/failure rates. No submitted parameters, coordinates, or personal data are ever logged. All analytics are self-hosted and cookie-free.</p>
+      <p>
+        <label style={{ cursor: 'pointer', userSelect: 'none' }}>
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={handleToggle}
+            style={{ marginRight: '0.4em' }}
+          />
+          Allow anonymous usage analytics
+        </label>
+      </p>
     </div>
   );
 }

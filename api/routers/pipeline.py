@@ -18,6 +18,7 @@ from schemas.pipeline import (
     JobStatus,
     ResultLayerInfo,
 )
+from services.analytics import daily_token_hash, emit_pipeline_submit
 from tasks import run_pipeline_task, _payload_hash, _create_work_dir
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,14 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
     run_pipeline_task.apply_async(
         args=(stage, work_dir, roost, features, params),
         task_id=task_id,
+    )
+
+    emit_pipeline_submit(
+        stage=stage,
+        resolution=params.get("resolution", 10),
+        feature_count=len(features),
+        has_roost=bool(roost),
+        user_id=daily_token_hash(token),
     )
 
     return PipelineStartResponse(job_id=task_id)
