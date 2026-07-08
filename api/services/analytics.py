@@ -1,5 +1,6 @@
 import concurrent.futures
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -19,12 +20,16 @@ _website_id = os.environ.get("UMAMI_WEBSITE_ID", "")
 _lock = threading.Lock()
 _init_done = bool(_website_id)
 
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="analytics")
+_max_workers = int(os.environ.get("ANALYTICS_MAX_WORKERS", "4"))
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=_max_workers, thread_name_prefix="analytics")
 
 
 def daily_token_hash(token: str) -> str:
     today = date.today().isoformat()
     raw = f"{token}:{today}"
+    secret = os.environ.get("ANALYTICS_HASH_SECRET", "")
+    if secret:
+        return hmac.new(secret.encode(), raw.encode(), hashlib.sha256).hexdigest()[:16]
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -62,6 +67,8 @@ def _admin_request(method: str, path: str, token: str | None = None, body: dict 
     headers = {"Content-Type": "application/json", "User-Agent": _USER_AGENT}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    # urllib does not use connection pooling; low-volume analytics traffic makes
+    # this acceptable. Could migrate to httpx if request frequency increases.
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -95,7 +102,7 @@ def _ensure_website() -> None:
         cache = _redis_cache()
         if cache:
             try:
-                cached = cache.get("umami:website_id")
+                cached = cache.get(f"umami:website_id:{_APP_HOSTNAME}")
                 if cached:
                     _website_id = cached
                     _init_done = True
@@ -116,6 +123,9 @@ def _ensure_website() -> None:
             if login and login.get("token"):
                 break
             logger.debug("Waiting for Umami (attempt %d/30)...", attempt + 1)
+            # _time.sleep blocks the calling thread; acceptable here because
+            # this is one-time startup initialization under a lock. After the
+            # first call _init_done flips to True and this path is never hit again.
             _time.sleep(2)
         else:
             logger.warning("Umami did not become ready within 60s. Analytics disabled.")
@@ -142,7 +152,7 @@ def _ensure_website() -> None:
 
         if cache:
             try:
-                cache.set("umami:website_id", _website_id)
+                cache.set(f"umami:website_id:{_APP_HOSTNAME}", _website_id)
             except Exception:
                 logger.warning("Redis cache write failed for analytics", exc_info=True)
 

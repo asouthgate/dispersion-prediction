@@ -3,9 +3,13 @@ import { getTokenSync } from './auth';
 const CONSENT_KEY = 'analytics-consent';
 
 export function getConsent(): boolean {
-  // Consent is currently always true since GDPR consent is not required at this stage.
-  // The consent object is kept for future use when a consent banner is introduced.
-  return localStorage.getItem(CONSENT_KEY) === 'true';
+  // Consent is assumed true for now. CONSENT_KEY is retained for future
+  // use when a consent banner is introduced — see HelpPanel.tsx TODO.
+  const stored = localStorage.getItem(CONSENT_KEY);
+  if (stored !== null) {
+    return stored === 'true';
+  }
+  return true;
 }
 
 export function setConsent(allow: boolean): void {

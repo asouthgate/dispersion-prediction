@@ -20,6 +20,9 @@ async def post_event(event: AnalyticsEvent, request: Request, authorization: str
     if not is_ready():
         return Response(status_code=204)
 
+    if not event.consent:
+        return Response(status_code=204)
+
     user_id = None
     if event.consent and authorization and authorization.startswith("Bearer "):
         token = authorization[7:]
