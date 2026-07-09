@@ -8,7 +8,9 @@ import {
   type DataFeature,
   destinationPoint,
   createPmtilesStyle,
-  OSM_LIBERTY_STYLE,
+  STYLE_TEMPLATE,
+  resolvePaletteTokens,
+  type MapPalette,
 } from '@gsbio/engine';
 import {
   createTerraDraw2DRenderer,
@@ -31,6 +33,23 @@ const MAX_BOUNDS: [[number, number], [number, number]] = [[-14, 49.5], [4, 61.5]
 
 const API_BASE = '/api';
 const PMTILES_FILENAME = 'uk.pmtiles';
+
+const MAP_PALETTE: MapPalette = {
+  background: 'rgba(63, 72, 62, 1)',
+  land: 'rgba(55, 83, 76, 1)',
+  land_green: 'rgba(49, 57, 44, 0.7)',
+  water: 'rgba(78, 122, 202, 1)',
+  road_casing: '#694037',
+  road_fill: '#694037',
+  road_tunnel_fill: '#694037',
+  building: 'rgba(147, 129, 118, 1)',
+  label_main: 'rgba(224, 224, 224, 1)',
+  label_minor: '#666',
+  label_halo: 'rgba(255, 255, 255, 0.7)',
+  rail: '#bbb',
+  border: '#9e9cab',
+  aeroway: '#f0ede9',
+};
 
 const iconStyle = { width: 18, height: 18 };
 
@@ -164,7 +183,7 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
 export function MapView() {
   const renderer = useMemo<TerraDraw2DRenderer>(() => {
     return createTerraDraw2DRenderer({
-      style: createPmtilesStyle(OSM_LIBERTY_STYLE, `${API_BASE}/pmtiles/${PMTILES_FILENAME}`),
+      style: createPmtilesStyle(resolvePaletteTokens(STYLE_TEMPLATE, MAP_PALETTE), `${API_BASE}/pmtiles/${PMTILES_FILENAME}`),
       center: CENTER,
       zoom: ZOOM,
       minZoom: MIN_ZOOM,
