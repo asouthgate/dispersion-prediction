@@ -10,6 +10,8 @@ import urllib.error
 import urllib.request
 from datetime import date
 
+from config import ANALYTICS_HASH_SECRET
+
 logger = logging.getLogger(__name__)
 
 _UMAMI_URL = os.environ.get("UMAMI_URL", "").rstrip("/")
@@ -28,10 +30,7 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=_max_workers, thre
 def daily_token_hash(token: str) -> str:
     today = date.today().isoformat()
     raw = f"{token}:{today}"
-    secret = os.environ.get("ANALYTICS_HASH_SECRET", "")
-    if secret:
-        return hmac.new(secret.encode(), raw.encode(), hashlib.sha256).hexdigest()[:16]
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return hmac.new(ANALYTICS_HASH_SECRET.encode(), raw.encode(), hashlib.sha256).hexdigest()[:16]
 
 
 def is_ready() -> bool:

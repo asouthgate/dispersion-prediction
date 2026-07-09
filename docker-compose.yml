@@ -60,6 +60,7 @@ services:
       UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
       UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-secret-do-not-use-in-production}
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
@@ -89,6 +90,7 @@ services:
       UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
       UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-secret-do-not-use-in-production}
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
@@ -96,24 +98,9 @@ services:
     working_dir: /app/api
     command: >
       celery -A celery_app worker
+      -B
       --loglevel=info
       --concurrency=${PIPELINE_MAX_WORKERS:-2}
-
-  celery_beat:
-    image: dispersion-prediction-app-api
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
-      PIPELINE_WORK_DIR: /tmp/circuitscape
-    volumes:
-      - pipeline_work:/tmp/circuitscape
-    working_dir: /app/api
-    command: >
-      celery -A celery_app beat
-      --loglevel=info
 
   frontend:
     image: dispersion-prediction-app-frontend
