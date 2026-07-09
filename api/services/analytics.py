@@ -49,19 +49,6 @@ def _send_url() -> str:
     return f"{_UMAMI_URL}/api/send"
 
 
-def _redis_cache() -> object | None:
-    try:
-        import redis
-        _redis_url = os.environ.get("AUTH_REDIS_URL", os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/9"))
-        return redis.Redis.from_url(_redis_url, decode_responses=True)
-    except ImportError:
-        logger.debug("redis package not installed, caching disabled")
-        return None
-    except Exception:
-        logger.warning("Failed to connect to Redis for analytics cache", exc_info=True)
-        return None
-
-
 def _admin_request(method: str, path: str, token: str | None = None, body: dict | None = None) -> dict | None:
     if not _UMAMI_URL:
         return None
@@ -103,18 +90,6 @@ def _ensure_website() -> None:
             _init_done = True
             return
 
-        cache = _redis_cache()
-        if cache:
-            try:
-                cached = cache.get(f"umami:website_id:{_APP_HOSTNAME}")
-                if cached:
-                    _website_id = cached
-                    _init_done = True
-                    logger.info("Umami website ID loaded from Redis: %s", _website_id)
-                    return
-            except Exception:
-                logger.warning("Redis cache read failed for analytics", exc_info=True)
-
         admin_user = os.environ.get("UMAMI_ADMIN_USER", "admin")
         admin_pass = os.environ.get("UMAMI_ADMIN_PASSWORD", "umami")
 
@@ -154,12 +129,6 @@ def _ensure_website() -> None:
                 logger.warning("Failed to create Umami website. Analytics disabled.")
                 _init_done = True
                 return
-
-        if cache:
-            try:
-                cache.set(f"umami:website_id:{_APP_HOSTNAME}", _website_id)
-            except Exception:
-                logger.warning("Redis cache write failed for analytics", exc_info=True)
 
         _init_done = True
 
