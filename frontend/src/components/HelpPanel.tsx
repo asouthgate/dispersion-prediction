@@ -1,4 +1,5 @@
 export function HelpPanel() {
+
   return (
     <div className="help-content">
       <p><b>1. Check the <a href="https://github.com/js01/dispersion-prediction-app/wiki/Tutorial" target="_blank" rel="noopener noreferrer">tutorial</a> for more information.</b></p>

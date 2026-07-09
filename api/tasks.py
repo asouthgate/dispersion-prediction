@@ -19,6 +19,7 @@ from pyproj import Transformer
 from config import PIPELINE_TIMEOUT
 from services.r_bridge import wgs84_to_bng
 from services.raster_service import tif_to_png
+from services.analytics import emit_pipeline_complete
 from services.r_bridge import _write_input_files as wif, collect_results
 
 logger = logging.getLogger(__name__)
@@ -338,15 +339,16 @@ def run_pipeline_task(
         elapsed = time.monotonic() - t0
         logger.info("Job %s: completed in %.1fs, %d layers, %d warnings",
                     self.request.id, elapsed, len(layers), len(warnings))
+        emit_pipeline_complete(stage, elapsed, True)
         return {"layers": layers, "warnings": warnings}
 
     except SoftTimeLimitExceeded:
+        emit_pipeline_complete(stage, time.monotonic() - t0, False)
         raise RuntimeError(
             "The pipeline took too long to complete. Try a smaller study area or a higher resolution value."
         )
     except Exception as e:
-        # Store the sanitized message on the FAILURE result so the status
-        # endpoint can read it back without re-running sanitization.
+        emit_pipeline_complete(stage, time.monotonic() - t0, False)
         friendly = _sanitize_error(str(e))
         logger.error("Job %s failed: %s", self.request.id, friendly)
         # Celery surfaces the exception's args as result on FAILURE; raise a

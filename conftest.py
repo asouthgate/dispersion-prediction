@@ -17,6 +17,7 @@ import sys
 # matching the worker (which runs with cwd=/app/api).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "api"))
 
+os.environ.setdefault("ANALYTICS_HASH_SECRET", "test-secret")
 # Configure Celery to run eagerly before importing anything that pulls celery_app.
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")

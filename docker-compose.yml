@@ -14,7 +14,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./test/data/seed:/seed-data:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-bats} -d ${DATABASE_NAME:-os}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DATABASE_USER:-bats} -d ${DATABASE_NAME:-os}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -56,6 +56,11 @@ services:
       PIPELINE_WORK_DIR: /tmp/circuitscape
       PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
       PMTILES_DIR: /data/pmtiles
+      UMAMI_URL: ${UMAMI_URL:-http://umami:3000}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
+      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-secret-do-not-use-in-production}
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
@@ -81,6 +86,11 @@ services:
       PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
       PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:-2}
       PMTILES_DIR: /data/pmtiles
+      UMAMI_URL: ${UMAMI_URL:-http://umami:3000}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
+      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-secret-do-not-use-in-production}
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
@@ -88,24 +98,9 @@ services:
     working_dir: /app/api
     command: >
       celery -A celery_app worker
+      -B
       --loglevel=info
       --concurrency=${PIPELINE_MAX_WORKERS:-2}
-
-  celery_beat:
-    image: dispersion-prediction-app-api
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
-      PIPELINE_WORK_DIR: /tmp/circuitscape
-    volumes:
-      - pipeline_work:/tmp/circuitscape
-    working_dir: /app/api
-    command: >
-      celery -A celery_app beat
-      --loglevel=info
 
   frontend:
     image: dispersion-prediction-app-frontend
@@ -115,6 +110,19 @@ services:
         gsbio: ./gsbio-engine
     ports:
       - "5180:80"
+
+  umami:
+    image: docker.umami.is/umami-software/umami:postgresql-latest
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DATABASE_USER:-bats}:${DATABASE_PASSWORD:-bats}@postgis:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:-change-me-in-production}
+      DISABLE_TELEMETRY: "1"
+    restart: unless-stopped
 
 volumes:
   pgdata:

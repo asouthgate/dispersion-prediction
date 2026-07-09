@@ -18,6 +18,10 @@ _result_backend = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:637
 
 RATE_LIMIT_TOKENS_PER_MINUTE = int(os.environ.get("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
 
+ANALYTICS_HASH_SECRET = os.environ.get("ANALYTICS_HASH_SECRET")
+if not ANALYTICS_HASH_SECRET:
+    raise RuntimeError("ANALYTICS_HASH_SECRET must be set in the environment")
+
 
 def _load_bats_cfg() -> dict[str, str]:
     """Load ~/.bats.cfg at startup.  All processes (API, Celery workers) import
