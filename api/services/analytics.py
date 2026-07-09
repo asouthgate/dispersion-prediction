@@ -19,6 +19,7 @@ _USER_AGENT = "DispersionAppBackend/1.0 (Analytics Client)"
 _website_id = os.environ.get("UMAMI_WEBSITE_ID", "")
 _lock = threading.Lock()
 _init_done = bool(_website_id)
+_init_started = False
 
 _max_workers = int(os.environ.get("ANALYTICS_MAX_WORKERS", "4"))
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=_max_workers, thread_name_prefix="analytics")
@@ -34,12 +35,14 @@ def daily_token_hash(token: str) -> str:
 
 
 def is_ready() -> bool:
-    _ensure_website()
+    _maybe_start_init()
     return bool(_UMAMI_URL and _website_id)
 
 
 def ensure_umami_website() -> None:
-    _ensure_website()
+    # Lazily kick off background website discovery. Non-blocking: returns
+    # immediately; init continues in a daemon thread if not already started.
+    _maybe_start_init()
 
 
 def _send_url() -> str:
@@ -97,6 +100,7 @@ def _ensure_website() -> None:
 
         if not _UMAMI_URL:
             logger.debug("UMAMI_URL not set, analytics disabled")
+            _init_done = True
             return
 
         cache = _redis_cache()
@@ -123,12 +127,12 @@ def _ensure_website() -> None:
             if login and login.get("token"):
                 break
             logger.debug("Waiting for Umami (attempt %d/30)...", attempt + 1)
-            # _time.sleep blocks the calling thread; acceptable here because
-            # this is one-time startup initialization under a lock. After the
-            # first call _init_done flips to True and this path is never hit again.
+            # _time.sleep blocks the calling thread; safe because _ensure_website
+            # runs in a daemon background thread, never in a request handler.
             _time.sleep(2)
         else:
             logger.warning("Umami did not become ready within 60s. Analytics disabled.")
+            _init_done = True
             return
 
         token = login["token"]
@@ -148,6 +152,7 @@ def _ensure_website() -> None:
                 logger.info("Created Umami website: %s (%s)", _website_id, name)
             else:
                 logger.warning("Failed to create Umami website. Analytics disabled.")
+                _init_done = True
                 return
 
         if cache:
@@ -175,9 +180,24 @@ def _post_umami(payload_bytes: bytes) -> None:
         logger.warning("Umami event send failed (network)", exc_info=True)
 
 
+def _maybe_start_init() -> None:
+    # Lazy, non-blocking initialization: starts _ensure_website in a daemon
+    # thread exactly once on the first emit/is_ready call. Never blocks the
+    # caller. Works in both FastAPI and Celery contexts without import-time
+    # side effects.
+    global _init_started
+    if _init_done or _init_started:
+        return
+    with _lock:
+        if _init_done or _init_started:
+            return
+        _init_started = True
+    threading.Thread(target=_ensure_website, daemon=True, name="analytics-init").start()
+
+
 def _fire(payload: dict) -> None:
-    _ensure_website()
-    if not _website_id or not _UMAMI_URL:
+    _maybe_start_init()
+    if not _init_done or not _website_id or not _UMAMI_URL:
         return
     data = json.dumps(payload, default=str).encode("utf-8")
     _executor.submit(_post_umami, data)
