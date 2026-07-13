@@ -37,18 +37,18 @@ const PMTILES_FILENAME = 'uk.pmtiles';
 const MAP_PALETTE: MapPalette = {
   background: 'rgba(63, 72, 62, 1)',
   land: 'rgba(55, 83, 76, 1)',
-  land_green: 'rgba(49, 57, 44, 0.7)',
+  land_green: '#243b3e',
   water: 'rgba(78, 122, 202, 1)',
-  road_casing: '#694037',
-  road_fill: '#694037',
-  road_tunnel_fill: '#694037',
-  building: 'rgba(147, 129, 118, 1)',
+  road_casing: '#353948',
+  road_fill: '#353948',
+  road_tunnel_fill: '#353948',
+  building: '#545961',
   label_main: 'rgba(224, 224, 224, 1)',
-  label_minor: '#666',
+  label_minor: 'rgba(224, 224, 224, 1)',
   label_halo: 'rgba(255, 255, 255, 0.7)',
-  rail: '#bbb',
-  border: '#9e9cab',
-  aeroway: '#f0ede9',
+  rail: '#618a8d',
+  border: '#9e9cab00',
+  aeroway: '#918678',
 };
 
 const iconStyle = { width: 18, height: 18 };
@@ -97,10 +97,13 @@ const ROOST_CROSS_SOURCE = 'roost-cross';
 const ROOST_RECT_FILL = 'roost-rect-fill';
 const ROOST_RECT_LINE = 'roost-rect-line';
 const ROOST_CROSS_LINE = 'roost-cross-line';
-const ROOST_COLOR = '#1a1a1a';
 const CROSS_COLOR = '#999';
 const RECT_LINE_WIDTH = 1;
 const CROSS_LINE_WIDTH = 0.5;
+
+function readAccentColor(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#5b8def';
+}
 
 function cardinal(p: { lng: number; lat: number }, r: number, bearing: number) { return destinationPoint(p, r, bearing); }
 
@@ -126,10 +129,10 @@ function crosshairGeom(center: { lng: number; lat: number }, radius: number): Ge
   };
 }
 
-function createRoostLayers(map: any) {
+function createRoostLayers(map: any, color: string) {
   const beforeId = map.getStyle().layers.find((l: { id: string }) => l.id.startsWith('td-'))?.id;
-  map.addLayer({ id: ROOST_RECT_FILL, type: 'fill', source: ROOST_RECT_SOURCE, paint: { 'fill-color': ROOST_COLOR, 'fill-opacity': 0.04 } }, beforeId);
-  map.addLayer({ id: ROOST_RECT_LINE, type: 'line', source: ROOST_RECT_SOURCE, paint: { 'line-color': ROOST_COLOR, 'line-width': RECT_LINE_WIDTH } }, beforeId);
+  map.addLayer({ id: ROOST_RECT_FILL, type: 'fill', source: ROOST_RECT_SOURCE, paint: { 'fill-color': color, 'fill-opacity': 0.04 } }, beforeId);
+  map.addLayer({ id: ROOST_RECT_LINE, type: 'line', source: ROOST_RECT_SOURCE, paint: { 'line-color': color, 'line-width': RECT_LINE_WIDTH } }, beforeId);
   map.addLayer({ id: ROOST_CROSS_LINE, type: 'line', source: ROOST_CROSS_SOURCE, paint: { 'line-color': CROSS_COLOR, 'line-width': CROSS_LINE_WIDTH } }, beforeId);
 }
 
@@ -151,6 +154,26 @@ function destroyRoostLayers(map: any) {
 function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
   const engine = useEngine();
   const lastKey = useRef<string | null>(null);
+  const accentColor = readAccentColor();
+
+  useEffect(() => {
+    let cleaning = false;
+    return engine.subscribe(() => {
+      if (cleaning) return;
+      const features = engine.getSnapshot().features.features;
+      const roosts = features.filter((f: DataFeature) => f.category === 'Roost');
+      if (roosts.length > 1) {
+        cleaning = true;
+        try {
+          for (const r of roosts.slice(0, -1)) {
+            engine.removeFeature(r.id);
+          }
+        } finally {
+          cleaning = false;
+        }
+      }
+    });
+  }, [engine]);
 
   useEffect(() => {
     return engine.subscribe(() => {
@@ -166,7 +189,7 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
         if (!existed) {
           map.addSource(ROOST_RECT_SOURCE, { type: 'geojson', data: { type: 'Feature', geometry: rectGeom(center, radiusMeters), properties: {} } });
           map.addSource(ROOST_CROSS_SOURCE, { type: 'geojson', data: { type: 'Feature', geometry: crosshairGeom(center, radiusMeters), properties: {} } });
-          createRoostLayers(map);
+          createRoostLayers(map, accentColor);
         } else {
           setRoostData(map, center, radiusMeters);
         }
@@ -175,7 +198,7 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
         destroyRoostLayers(map);
       }
     });
-  }, [engine, renderer]);
+  }, [engine, renderer, accentColor]);
 
   return null;
 }

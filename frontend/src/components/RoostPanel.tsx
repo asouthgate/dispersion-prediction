@@ -21,8 +21,8 @@ export function RoostPanel() {
 
   useEffect(() => {
     if (roost?.circle) {
-      setLat(String(roost.circle.center.lat));
-      setLng(String(roost.circle.center.lng));
+      setLat(roost.circle.center.lat.toFixed(5));
+      setLng(roost.circle.center.lng.toFixed(5));
       setRadius(roost.circle.radiusMeters);
     }
   }, [roost?.circle?.center.lat, roost?.circle?.center.lng, roost?.circle?.radiusMeters]);
@@ -80,14 +80,14 @@ export function RoostPanel() {
                 value={radius}
                 onChange={(e) => { setRadius(Number(e.target.value)); updateRoost('radius', Number(e.target.value)); }}
               />
-              <span className="range-value">{radius}</span>
+              <span className="range-value">{radius.toLocaleString()}</span>
             </div>
           </label>
           <label className="field">
             <span className="field-label">Latitude</span>
             <input
               type="number"
-              step={0.0001}
+              step={0.00001}
               value={lat}
               onChange={(e) => { setLat(e.target.value); updateRoost('lat', Number(e.target.value)); }}
             />
@@ -96,7 +96,7 @@ export function RoostPanel() {
             <span className="field-label">Longitude</span>
             <input
               type="number"
-              step={0.0001}
+              step={0.00001}
               value={lng}
               onChange={(e) => { setLng(e.target.value); updateRoost('lng', Number(e.target.value)); }}
             />
