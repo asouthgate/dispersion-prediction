@@ -33,7 +33,8 @@ async def get_raster_png(job_id: str, layer: str):
         os.makedirs(os.path.join(job_dir, "images"), exist_ok=True)
         try:
             bounds = get_bounds_for_tif(tif_path)
-            tif_to_png(tif_path, png_path, bounds, circular_mask=not layer.endswith("_clipped"))
+            colormap = "plasma" if "current" in layer else "magma"
+            tif_to_png(tif_path, png_path, bounds, circular_mask=not layer.endswith("_clipped"), colormap=colormap)
         except Exception as e:
             logger.error("Failed to convert %s to PNG: %s", layer, e)
             raise HTTPException(status_code=500, detail="Failed to render raster image")
