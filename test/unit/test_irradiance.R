@@ -23,7 +23,7 @@ test_that("irradiance is computed as expected.", {
         buildings <- r
         buildings[] = 0
 
-        ext <- raster::extent(0, 10, 0, 10)
+        ext <- 10
 
         pi <- cal_lamp_irradiance(lamps, soft_surf, hard_surf, r_dtm, ext)
         expect_equal(sum(pi[75:80,70:80]), 0)

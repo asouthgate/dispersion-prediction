@@ -273,6 +273,16 @@ def _run_r_pipeline(
             ["Rscript", "--no-init-file", plot_script, work_dir],
             cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
         )
+    for layer in layers_raw:
+        tif_path = layer["tif_path"]
+        png_path = os.path.join(work_dir, "images", f"{layer['id']}.png")
+        from services.raster_service import tif_to_png, get_bounds_for_tif
+        colormap = "plasma" if "current" in layer["id"] else "magma"
+        try:
+            bounds = get_bounds_for_tif(tif_path)
+            tif_to_png(tif_path, png_path, bounds, colormap=colormap)
+        except Exception as e:
+            logger.warning("Pre-render failed for %s: %s", layer["id"], e)
 
     result_layers = []
     for layer in layers_raw:
