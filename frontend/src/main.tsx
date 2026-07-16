@@ -29,6 +29,15 @@ export function AppRoot() {
     return e;
   });
 
+  useEffect(() => {
+    const stageMap: Record<PipelineStage, string | null> = {
+      current: 'log_current',
+      resistance: 'log_total_res',
+      coverage: null,
+    };
+    engine.defaultLayerId = stageMap[stage] ?? null;
+  }, [stage, engine]);
+
   if (!token) return null;
 
   return (

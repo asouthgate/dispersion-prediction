@@ -96,7 +96,7 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
   return (
     <div className="side-panel">
       <div className="side-panel-top-row">
-        <span className="side-panel-title">ECHO.FLOW</span>
+{/*        <span className="side-panel-title">ECHO.MAPPER</span> */}
         <button className="panel-collapse-btn" onClick={() => setCollapsed(true)} title="Collapse panel">▶</button>
       </div>
       <div className="side-panel-scroll">

@@ -22,7 +22,8 @@ import { Building04 } from 'react-coolicons';
 import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
 import { Sun } from 'react-coolicons';
-import { getTokenSync, ensureValidToken } from '../auth';
+import { Move } from 'react-coolicons';
+import { getTokenSync, ensureValidToken, getStoredToken } from '../auth';
 
 const CENTER: [number, number] = [-3.590523, 50.586362];
 const ZOOM = 13;
@@ -54,6 +55,7 @@ const MAP_PALETTE: MapPalette = {
 const iconStyle = { width: 18, height: 18 };
 
 const TOOLS: Array<{ mode: DrawMode; label: string; icon: React.ReactNode; color: string }> = [
+  { mode: 'select', label: 'Select', icon: <Move style={iconStyle} />, color: '#888' },
   { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def' },
   { mode: 'polygon', label: 'Building', icon: <Building04 style={iconStyle} />, color: '#a0522d' },
   { mode: 'linestring', label: 'Road', icon: <CarAuto style={iconStyle} />, color: '#888888' },
@@ -216,16 +218,20 @@ export function MapView() {
       resultStyles,
       getToken: getTokenSync,
       refreshToken: () => ensureValidToken(true),
+      transformRequest: (url) => {
+        const pathname = url.startsWith('http') ? new URL(url).pathname : url.split('?')[0];
+        if (pathname.startsWith('/api/')) {
+          const token = getStoredToken();
+          return { url, headers: token ? { Authorization: `Bearer ${token}` } : {} };
+        }
+        return { url };
+      },
     });
   }, []);
 
   return (
     <MapScene renderer={renderer}>
-      <DrawToolbar
-        tools={drawTools}
-        onStartDrawing={renderer.startDrawing}
-        onSelectMode={renderer.selectMode}
-      />
+      <DrawToolbar tools={drawTools} />
       <RoostOverlay renderer={renderer} />  
     </MapScene>
   );

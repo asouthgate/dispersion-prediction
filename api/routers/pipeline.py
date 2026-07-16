@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 import redis.asyncio as aioredis
 
 from celery_app import celery_app
-from config import AUTH_REDIS_URL
+from config import AUTH_REDIS_URL, MAX_PIXEL_DIMENSION
 from middleware.auth import require_auth
 from schemas.pipeline import (
     PipelineRequest,
@@ -73,6 +73,17 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
     roost = req.roost.model_dump() if req.roost else None
     features = [f.model_dump() for f in req.features]
     params = dict(req.params)
+
+    if roost:
+        radius = roost.get("radiusMeters") or roost.get("radius_meters", 2500)
+        resolution = params.get("resolution", 10)
+        pixel_dim = (2 * radius) / resolution
+        if pixel_dim > MAX_PIXEL_DIMENSION:
+            min_res = -(-int(2 * radius) // MAX_PIXEL_DIMENSION)  # ceiling division
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Resolution too high for the selected area. Use a resolution of at least {min_res} m/px or reduce the study area.",
+            )
 
     payload_hash = _payload_hash(stage, roost, features, params)
     work_dir = _create_work_dir(payload_hash)

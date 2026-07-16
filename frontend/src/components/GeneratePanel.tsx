@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import type { PipelineStage } from '../models/horseshoeBat';
-import { useModel, useRun, useResults, useEngine, extractResultLayers } from '@gsbio/engine';
-import type { RunLogEntry, ResultLayerEntry } from '@gsbio/engine';
+import { useModel, useRun, useResults, useEngine, useEngineState, extractResultLayers, computePixelDimensions, computeMinResolution } from '@gsbio/engine';
+import type { RunLogEntry, DataFeature } from '@gsbio/engine';
 import { RunPanel, ResultsPanel } from '@gsbio/engine';
 import { RunLogModal } from './RunLogModal';
+import { fetchWithAuth } from '../auth';
+
+const MAX_PIXEL_DIMENSION = 2000;
 
 const STAGES: { key: PipelineStage; label: string }[] = [
   { key: 'coverage', label: 'Coverage' },
@@ -29,6 +32,12 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
 
   const resolution = model.params.resolution ?? 10;
 
+  const { features } = useEngineState();
+  const roost = features.features.find((f: DataFeature) => f.category === 'Roost');
+  const roostRadius = roost?.circle?.radiusMeters ?? 0;
+  const minRes = roostRadius > 0 ? computeMinResolution(roostRadius, MAX_PIXEL_DIMENSION) : 1;
+  const pixelDim = roostRadius > 0 ? computePixelDimensions(roostRadius, resolution) : null;
+
   const handleViewLog = (runId: string, _log: RunLogEntry[]): void => {
     void _log;
     setLogRunId(runId);
@@ -37,24 +46,27 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
   const handleDownload = async (runId: string): Promise<void> => {
     const rec = engine.findRun(runId);
     if (!rec?.result) return;
-    const layers: ResultLayerEntry[] = extractResultLayers(rec.result, runId);
-    for (const layer of layers) {
-      if (layer.envelope.kind === 'image') {
-        try {
-          const res = await fetch(layer.envelope.url);
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${layer.id}.png`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        } catch {
-          window.open(layer.envelope.url, '_blank');
-        }
-      }
+    const layers = extractResultLayers(rec.result, runId);
+    const imageEnv = layers.find((l) => l.envelope.kind === 'image')?.envelope as
+      { kind: 'image'; url: string; bounds: [number, number, number, number] } | undefined;
+    if (!imageEnv) return;
+    const match = imageEnv.url.match(/\/api\/rasters\/([^/]+)\//);
+    if (!match) return;
+    const jobId = match[1];
+    try {
+      const res = await fetchWithAuth(`/api/rasters/${jobId}/download`);
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'results.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download failed:', err);
     }
   };
 
@@ -82,7 +94,7 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
         <div className="range-field">
           <input
             type="range"
-            min={1}
+            min={minRes}
             max={100}
             step={1}
             value={resolution}
@@ -90,6 +102,9 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
           />
           <span className="range-value">{resolution}</span>
         </div>
+        {pixelDim && (
+          <span className="range-subtext">{pixelDim.width} × {pixelDim.height} px</span>
+        )}
       </div>
 
       <RunPanel />

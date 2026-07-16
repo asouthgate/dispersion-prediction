@@ -1,10 +1,11 @@
 import { useFeatures } from '@gsbio/engine';
 import type { DataFeature } from '@gsbio/engine';
-import { Building04, CarAuto, WaterDrop, Sun } from 'react-coolicons';
+import { Building04, CarAuto, WaterDrop, Sun, Move } from 'react-coolicons';
 
 const categoryIconStyle = { width: 14, height: 14 };
 
 const categoryIconMap: Record<string, React.ReactNode> = {
+  Select: <Move style={categoryIconStyle} />,
   Building: <Building04 style={categoryIconStyle} />,
   Road: <CarAuto style={categoryIconStyle} />,
   River: <WaterDrop style={categoryIconStyle} />,

@@ -10,6 +10,7 @@ PIPELINE_WORK_DIR = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
 PMTILES_DIR = os.environ.get("PMTILES_DIR", "/data/pmtiles")
 
 PIPELINE_TIMEOUT = int(os.environ.get("PIPELINE_TIMEOUT", "1800"))
+MAX_PIXEL_DIMENSION = int(os.environ.get("MAX_PIXEL_DIMENSION", "2000"))
 TOKEN_TTL_SECONDS = int(os.environ.get("AUTH_TOKEN_TTL_SECONDS", "86400"))
 
 _broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")

@@ -2,10 +2,11 @@
 
 import os
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 import tempfile
 import zipfile
+from middleware.auth import require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ def _get_job_dir(job_id: str) -> str:
 
 
 @router.get("/{job_id}/{layer}.png")
-async def get_raster_png(job_id: str, layer: str):
+async def get_raster_png(job_id: str, layer: str, _token: str = Depends(require_auth)):
     """Serve a raster layer as a PNG image."""
     job_dir = _get_job_dir(job_id)
     png_path = os.path.join(job_dir, "images", f"{layer}.png")
@@ -47,7 +48,7 @@ async def get_raster_png(job_id: str, layer: str):
 
 
 @router.get("/{job_id}/download")
-async def download_results(job_id: str):
+async def download_results(job_id: str, _token: str = Depends(require_auth)):
     """Download all result rasters as a ZIP file."""
     job_dir = _get_job_dir(job_id)
     if not os.path.isdir(job_dir):
