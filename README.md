@@ -74,7 +74,7 @@ You'll also need:
 - The host path `/opt/dispersion-app/data/pmtiles` must exist and contain the required `.pmtiles` files
 - Docker & Docker Compose
 
-## First deploy
+## Deployment
 
 ```bash
 # Build the API image (or pull from your registry)

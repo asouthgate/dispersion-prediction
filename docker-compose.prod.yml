@@ -1,25 +1,26 @@
+x-app-environment: &app-environment
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  DATABASE_HOST: ${DATABASE_HOST:-localhost}
+  DATABASE_NAME: ${DATABASE_NAME:-os}
+  DATABASE_PORT: ${DATABASE_PORT:-5432}
+  DATABASE_USER: ${DATABASE_USER:-bats}
+  DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+  AUTH_REDIS_URL: ${AUTH_REDIS_URL:-redis://redis:6379/2}
+  PIPELINE_WORK_DIR: /tmp/circuitscape
+  PIPELINE_WORK_DIR_TTL_HOURS: ${PIPELINE_WORK_DIR_TTL_HOURS:-24}
+  PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
+  PMTILES_DIR: /data/pmtiles
+  UMAMI_URL: ${UMAMI_URL:-http://umami:3000}
+  UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+  UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
+  UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
+  ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-change-me-in-production}
+
 x-app-defaults: &app-defaults
-  image: dispersion-prediction-app-api:v1.0.0
+  image: dispersion-prediction-app-api
   restart: always
-  environment:
-    CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
-    DATABASE_HOST: ${DATABASE_HOST:-localhost}
-    DATABASE_NAME: ${DATABASE_NAME:-os}
-    DATABASE_PORT: ${DATABASE_PORT:-5432}
-    DATABASE_USER: ${DATABASE_USER:-bats}
-    DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
-    CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-    CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
-    AUTH_REDIS_URL: ${AUTH_REDIS_URL:-redis://redis:6379/2}
-    PIPELINE_WORK_DIR: /tmp/circuitscape
-    PIPELINE_WORK_DIR_TTL_HOURS: ${PIPELINE_WORK_DIR_TTL_HOURS:-24}
-    PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
-    PMTILES_DIR: /data/pmtiles
-    UMAMI_URL: ${UMAMI_URL:-http://umami:3000}
-    UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
-    UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
-    UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
-    ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-change-me-in-production}
   volumes:
     - pipeline_work:/tmp/circuitscape
     # Ensure this host path exists and contains the required .pmtiles files.
@@ -57,7 +58,7 @@ services:
   api:
     <<: *app-defaults
     environment:
-      <<: *app-defaults.environment
+      <<: *app-environment
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -76,7 +77,7 @@ services:
   celery_worker:
     <<: *app-defaults
     environment:
-      <<: *app-defaults.environment
+      <<: *app-environment
       PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:-4}
     working_dir: /app/api
     command: celery -A celery_app worker -B --loglevel=info --concurrency=${PIPELINE_MAX_WORKERS:-4}
