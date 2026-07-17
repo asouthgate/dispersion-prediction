@@ -27,9 +27,9 @@ import { getTokenSync, ensureValidToken, getStoredToken } from '../auth';
 
 const CENTER: [number, number] = [-3.590523, 50.586362];
 const ZOOM = 13;
-/** Map zoom limits — the `uk.pmtiles` archive only carries z0-14 vector tiles. */
+/** Map zoom limits — the `uk.pmtiles` archive only carries z0-14 vector tiles (overscaled above 14). */
 const MIN_ZOOM = 0;
-const MAX_ZOOM = 14;
+const MAX_ZOOM = 20;
 const MAX_BOUNDS: [[number, number], [number, number]] = [[-14, 49.5], [4, 61.5]];
 
 const API_BASE = '/api';

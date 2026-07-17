@@ -17,7 +17,7 @@ import time
 import urllib.request
 from typing import Any
 
-DEFAULT_API = os.environ.get("API_BASE", "http://localhost:8000")
+DEFAULT_API = os.environ.get("API_BASE", "http://localhost:8084")
 POLL_INTERVAL = 2
 MAX_POLLS = 300
 

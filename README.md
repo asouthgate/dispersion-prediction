@@ -53,41 +53,111 @@ bash run-docker-api-test.sh
 
 # Deployment
 
-To deploy as a standalone single-node app:
+To deploy as a standalone single-node app. All containers use `network_mode: host`,
+sharing the host's network stack — `localhost` works for inter-container communication.
 
 ## System components
 
-The `docker-compose.prod.yml` stack runs four containers plus a reverse proxy:
+The `docker-compose.prod.yml` stack runs four containers:
 
-- **redis**: Celery message broker and auth token store
-- **api**: FastAPI backend, serves `/api/*` including PMTiles
-- **celery_worker**: async pipeline runner + beat
-- **umami**: self-hosted web analytics
+- **redis** (port 6379): Celery message broker and auth token store
+- **api** (port 8000): FastAPI backend, serves `/api/*` including PMTiles
+- **celery_worker**: async pipeline runner + beat (periodic cleanup)
+- **umami** (port 3000): self-hosted web analytics
 
 You'll also need:
 
-- **Reverse proxy** (e.g. nginx) serves the built frontend statically, terminates TLS, and proxies `/api/` requests to `127.0.0.1:8000`. A sample nginx config is at `test/docker/nginx.conf`.
+- **Reverse proxy** (nginx) serves the built frontend statically and proxies `/api/` to `127.0.0.1:8000`.
+  Example config:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /opt/dispersion-app/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 10s;
+    }
+}
+```
+
+Install and enable:
+
+```bash
+sudo apt install nginx
+sudo nano /etc/nginx/sites-available/dispersion.conf   # paste config above
+sudo ln -s /etc/nginx/sites-available/dispersion.conf /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+sudo ufw allow 80/tcp
+```
 
 ## Prerequisites
 
-- External PostgreSQL with PostGIS (not included in the prod compose)
-- The host path `/opt/dispersion-app/data/pmtiles` must exist and contain the required `.pmtiles` files
-- Docker & Docker Compose
+- **PostgreSQL with PostGIS** (external, not in the prod compose)
+- **Docker & Docker Compose**
+- **nginx** (see above)
+- `postgis` package for `shp2pgsql` / `raster2pgsql` CLI tools: `sudo apt install postgis`
 
-## Deployment
+## Setup steps
 
 ```bash
-# Build the API image (or pull from your registry)
+# 1. Create the application user and database
+sudo -u postgres createuser -P bats   # enter password
+sudo -u postgres createdb -O bats os
+
+# 2. Install PostGIS extensions
+sudo -u postgres psql -d os -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+sudo -u postgres psql -d os -c "CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+
+# 3. Place the PMTiles map file
+mkdir -p /opt/dispersion-app/data
+cp data/uk-global-base.pmtiles /opt/dispersion-app/data/
+
+# 4. Seed the database with GIS test data
+cd test/data
+SEED_DIR=$(pwd)/seed DATABASE_HOST=localhost bash seed/seed-test-data.sh
+cd ../..
+
+# 5. Create the Umami analytics database
+sudo -u postgres psql -c "CREATE DATABASE umami OWNER bats;"
+sudo -u postgres psql -d umami -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+sudo -u postgres psql -d umami -c "GRANT ALL ON SCHEMA public TO bats;"
+
+# 6. Build the API image
 docker build -f test/docker/Dockerfile.backend -t dispersion-prediction-app-api:v1.0.0 .
 
-# Build the frontend
-cd frontend && npm ci && npm run build
+# 7. Build the frontend
+cd frontend && npm ci && npm run build && cd ..
 
-# Copy and fill in environment variables, documentedin `env.example`
+# 8. Configure environment
 cp .env.example .env
+# Edit .env — at minimum set CORS_ORIGINS to your domain/IP,
+# and change passwords and secrets from their defaults.
 
-# Start the stack
+# 9. Start the stack
 docker compose -f docker-compose.prod.yml up -d
+```
+
+## Optional: Redis overcommit
+
+To suppress the Redis memory overcommit warning:
+
+```bash
+sudo sysctl vm.overcommit_memory=1
+echo "vm.overcommit_memory = 1" | sudo tee -a /etc/sysctl.conf
 ```
 
 # Data

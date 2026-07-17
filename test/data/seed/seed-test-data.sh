@@ -7,7 +7,7 @@ DB_NAME="${DATABASE_NAME:-${POSTGRES_DB:-os}}"
 DB_USER="${DATABASE_USER:-${POSTGRES_USER:-bats}}"
 DB_PORT="${DATABASE_PORT:-5432}"
 DB_PASSWORD="${DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-bats}}"
-SEED_DIR="/seed-data"
+SEED_DIR="${SEED_DIR:-/seed}"
 
 export PGPASSWORD="$DB_PASSWORD"
 
@@ -28,12 +28,12 @@ echo "[umami database]..."
 
 for table in roads rivers buildings; do
     echo "[$table]..."
-    shp2pgsql -s 27700 -c -I -D "$SEED_DIR/gis/$table/$table.shp" "$table"  2>/dev/null | "${PSQL[@]}" -q >/dev/null
+    shp2pgsql -s 27700 -I -D "$SEED_DIR/gis/$table/$table.shp" "$table"  2>/dev/null | "${PSQL[@]}" -q >/dev/null
 done
 
 for table in dtm dsm lcm; do
     echo "[$table]..."
-    raster2pgsql -s 27700 -I "$SEED_DIR/gis/$table"/*.tif "$table" 2>/dev/null | "${PSQL[@]}" -q >/dev/null
+    raster2pgsql -s 27700 -d -I "$SEED_DIR/gis/$table"/*.tif "$table" 2>/dev/null | "${PSQL[@]}" -q >/dev/null
 done
 
 for table in dtm dsm lcm; do

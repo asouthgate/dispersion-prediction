@@ -4,17 +4,16 @@ services:
     build:
       context: .
       dockerfile: test/docker/Dockerfile.gis
+    network_mode: host
     environment:
-      POSTGRES_DB: ${DATABASE_NAME:-os}
-      POSTGRES_USER: ${DATABASE_USER:-bats}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-bats}
-    ports:
-      - "${DATABASE_PORT:-5432}:5432"
+      POSTGRES_DB: ${DATABASE_NAME:?DATABASE_NAME must be set}
+      POSTGRES_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./test/data/seed:/seed-data:ro
+      - ./test/data/seed:/seed:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DATABASE_USER:-bats} -d ${DATABASE_NAME:-os}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DATABASE_USER:?DATABASE_USER must be set} -d ${DATABASE_NAME:?DATABASE_NAME must be set}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -22,12 +21,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    network_mode: host
+    command: redis-server --port ${REDIS_PORT:?REDIS_PORT must be set}
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:?REDIS_PORT must be set}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -36,31 +35,31 @@ services:
     image: dispersion-prediction-app-api
     build:
       dockerfile: test/docker/Dockerfile.backend
-    ports:
-      - "8000:8000"
+    network_mode: host
     depends_on:
       postgis:
         condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      DATABASE_HOST: postgis
-      DATABASE_NAME: ${DATABASE_NAME:-os}
-      DATABASE_PORT: 5432
-      DATABASE_USER: ${DATABASE_USER:-bats}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
-      CORS_ORIGINS: http://localhost:5180,http://localhost:5173,http://localhost:4173
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
-      AUTH_REDIS_URL: ${AUTH_REDIS_URL:-redis://redis:6379/2}
+      API_PORT: ${API_PORT:?API_PORT must be set}
+      DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
+      DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
+      DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
+      DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
+      AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
       PIPELINE_WORK_DIR: /tmp/circuitscape
-      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:?PIPELINE_TIMEOUT must be set}
       PMTILES_DIR: /data/pmtiles
-      UMAMI_URL: ${UMAMI_URL:-http://umami:3000}
+      UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
       UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
-      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
-      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
-      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-secret-do-not-use-in-production}
+      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:?UMAMI_ADMIN_USER must be set}
+      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:?UMAMI_ADMIN_PASSWORD must be set}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
@@ -68,29 +67,30 @@ services:
 
   celery_worker:
     image: dispersion-prediction-app-api
+    network_mode: host
     depends_on:
-      redis:
-        condition: service_healthy
       postgis:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      DATABASE_HOST: postgis
-      DATABASE_NAME: ${DATABASE_NAME:-os}
-      DATABASE_PORT: 5432
-      DATABASE_USER: ${DATABASE_USER:-bats}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
-      AUTH_REDIS_URL: ${AUTH_REDIS_URL:-redis://redis:6379/2}
+      DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
+      DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
+      DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
+      DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
+      AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
       PIPELINE_WORK_DIR: /tmp/circuitscape
-      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
-      PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:-2}
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:?PIPELINE_TIMEOUT must be set}
+      PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:?PIPELINE_MAX_WORKERS must be set}
       PMTILES_DIR: /data/pmtiles
-      UMAMI_URL: ${UMAMI_URL:-http://umami:3000}
+      UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
       UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
-      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
-      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
-      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-secret-do-not-use-in-production}
+      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:?UMAMI_ADMIN_USER must be set}
+      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:?UMAMI_ADMIN_PASSWORD must be set}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
     volumes:
       - pipeline_work:/tmp/circuitscape
       - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
@@ -100,7 +100,7 @@ services:
       celery -A celery_app worker
       -B
       --loglevel=info
-      --concurrency=${PIPELINE_MAX_WORKERS:-2}
+      --concurrency=${PIPELINE_MAX_WORKERS:?PIPELINE_MAX_WORKERS must be set}
 
   frontend:
     image: dispersion-prediction-app-frontend
@@ -108,20 +108,22 @@ services:
       dockerfile: test/docker/Dockerfile.frontend
       additional_contexts:
         gsbio: ./gsbio-engine
-    ports:
-      - "5180:80"
+    network_mode: host
+    environment:
+      FRONTEND_PORT: ${FRONTEND_PORT:?FRONTEND_PORT must be set}
+      API_PORT: ${API_PORT:?API_PORT must be set}
 
   umami:
     image: docker.umami.is/umami-software/umami:postgresql-latest
-    ports:
-      - "127.0.0.1:3001:3000"
+    network_mode: host
     depends_on:
       postgis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${DATABASE_USER:-bats}:${DATABASE_PASSWORD:-bats}@postgis:5432/umami
-      APP_SECRET: ${UMAMI_APP_SECRET:-change-me-in-production}
+      DATABASE_URL: postgresql://${DATABASE_USER:?DATABASE_USER must be set}:${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}@${DATABASE_HOST:?DATABASE_HOST must be set}:${DATABASE_PORT:?DATABASE_PORT must be set}/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
+      PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
     restart: unless-stopped
 
 volumes:

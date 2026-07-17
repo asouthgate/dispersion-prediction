@@ -2,8 +2,8 @@ import os
 import logging
 import configparser
 
-cors_env = os.environ.get("CORS_ORIGINS", "http://localhost:5180,http://localhost:5173")
-CORS_ORIGINS = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
+_cors_env = os.environ.get("CORS_ORIGINS", "")
+CORS_ORIGINS = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 PIPELINE_WORK_DIR = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
@@ -13,9 +13,15 @@ PIPELINE_TIMEOUT = int(os.environ.get("PIPELINE_TIMEOUT", "1800"))
 MAX_PIXEL_DIMENSION = int(os.environ.get("MAX_PIXEL_DIMENSION", "2000"))
 TOKEN_TTL_SECONDS = int(os.environ.get("AUTH_TOKEN_TTL_SECONDS", "86400"))
 
-_broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-AUTH_REDIS_URL = os.environ.get("AUTH_REDIS_URL", _broker_url)
-_result_backend = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL")
+if not CELERY_BROKER_URL:
+    raise RuntimeError("CELERY_BROKER_URL must be set in the environment")
+
+AUTH_REDIS_URL = os.environ.get("AUTH_REDIS_URL", CELERY_BROKER_URL)
+
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND")
+if not CELERY_RESULT_BACKEND:
+    raise RuntimeError("CELERY_RESULT_BACKEND must be set in the environment")
 
 RATE_LIMIT_TOKENS_PER_MINUTE = int(os.environ.get("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
 

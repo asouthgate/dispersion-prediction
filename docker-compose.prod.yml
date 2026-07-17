@@ -1,30 +1,30 @@
 x-app-environment: &app-environment
-  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
-  DATABASE_HOST: ${DATABASE_HOST:-localhost}
-  DATABASE_NAME: ${DATABASE_NAME:-os}
-  DATABASE_PORT: ${DATABASE_PORT:-5432}
-  DATABASE_USER: ${DATABASE_USER:-bats}
-  DATABASE_PASSWORD: ${DATABASE_PASSWORD:-bats}
-  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
-  AUTH_REDIS_URL: ${AUTH_REDIS_URL:-redis://redis:6379/2}
-  PIPELINE_WORK_DIR: /tmp/circuitscape
+  CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+  DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
+  DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
+  DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
+  DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+  DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
+  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
+  AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
+  PIPELINE_WORK_DIR: ${PIPELINE_WORK_DIR:-/tmp/circuitscape}
   PIPELINE_WORK_DIR_TTL_HOURS: ${PIPELINE_WORK_DIR_TTL_HOURS:-24}
   PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
-  PMTILES_DIR: /data/pmtiles
-  UMAMI_URL: ${UMAMI_URL:-http://umami:3000}
+  PMTILES_DIR: ${PMTILES_DIR:-/data/pmtiles}
+  UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
   UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
   UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
   UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
-  ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-change-me-in-production}
+  ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
 
 x-app-defaults: &app-defaults
-  image: dispersion-prediction-app-api
+  image: dispersion-prediction-app-api:v1.0.0
   restart: always
+  network_mode: host
   volumes:
     - pipeline_work:/tmp/circuitscape
-    # Ensure this host path exists and contains the required .pmtiles files.
-    - /opt/dispersion-app/data/pmtiles:/data/pmtiles:ro
+    - /opt/dispersion-app/data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
   logging:
     driver: json-file
     options:
@@ -35,10 +35,12 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    network_mode: host
+    command: redis-server --port ${REDIS_PORT:?REDIS_PORT must be set}
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:?REDIS_PORT must be set}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -59,10 +61,9 @@ services:
     <<: *app-defaults
     environment:
       <<: *app-environment
-    ports:
-      - "127.0.0.1:8000:8000"
+      API_PORT: ${API_PORT:?API_PORT must be set}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${API_PORT:-8084}/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -78,11 +79,10 @@ services:
     <<: *app-defaults
     environment:
       <<: *app-environment
-      PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:-4}
     working_dir: /app/api
     command: celery -A celery_app worker -B --loglevel=info --concurrency=${PIPELINE_MAX_WORKERS:-4}
     healthcheck:
-      test: ["CMD", "celery", "-A", "celery_app", "inspect", "ping", "-d", "celery@$HOSTNAME"]
+      test: ["CMD", "celery", "-A", "celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -97,14 +97,14 @@ services:
   umami:
     image: docker.umami.is/umami-software/umami:postgresql-latest
     restart: always
-    ports:
-      - "127.0.0.1:3001:3000"
+    network_mode: host
     environment:
-      DATABASE_URL: postgresql://${DATABASE_USER:-bats}:${DATABASE_PASSWORD:-bats}@${DATABASE_HOST:-localhost}:${DATABASE_PORT:-5432}/${DATABASE_NAME:-umami}
-      APP_SECRET: ${UMAMI_APP_SECRET:-change-me-in-production}
+      DATABASE_URL: postgresql://${DATABASE_USER:?DATABASE_USER must be set}:${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}@${DATABASE_HOST:?DATABASE_HOST must be set}:${DATABASE_PORT:?DATABASE_PORT must be set}/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
+      PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/heartbeat || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${UMAMI_PORT:-3084}/api/heartbeat || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
