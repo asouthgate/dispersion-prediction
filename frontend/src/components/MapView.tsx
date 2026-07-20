@@ -234,7 +234,8 @@ export function MapView() {
   return (
     <MapScene renderer={renderer}>
       <DrawToolbar tools={drawTools} />
-      <RoostOverlay renderer={renderer} />  
+      <RoostOverlay renderer={renderer} />{/* Renders a roost-crosshair overlay that enforces single-roost semantics: uses
+a `cleaning` flag to suppress re-entrant callbacks while removing extra roosts. */}
     </MapScene>
   );
 }
