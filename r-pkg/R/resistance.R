@@ -1,7 +1,7 @@
 library(raster)
 library(logger)
 
-source("R/irradiance.R")
+source("r-pkg/R/irradiance.R")
 
 #' Get a function that takes x, y, and returns value if y is 1, otherwise x
 #'

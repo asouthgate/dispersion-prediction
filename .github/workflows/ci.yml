@@ -40,7 +40,7 @@ jobs:
         run: |
           RENV_PATHS_ROOT=${{ runner.temp }}/renv
           echo "RENV_PATHS_ROOT=$RENV_PATHS_ROOT" >> $GITHUB_ENV
-          Rscript -e "options(repos = c(CRAN = '${{ env.RENV_CONFIG_REPOS_OVERRIDE }}')); if (!requireNamespace('renv', quietly = TRUE)) install.packages('renv'); renv::restore()"
+          Rscript -e "options(repos = c(CRAN = '${{ env.RENV_CONFIG_REPOS_OVERRIDE }}')); if (!requireNamespace('renv', quietly = TRUE)) install.packages('renv'); renv::restore(project = 'r-pkg')"
 
       - name: Run R unit tests
         run: Rscript test/run_unit_tests.R
@@ -83,7 +83,7 @@ jobs:
           pip install pytest fakeredis
 
       - name: Create .bats.cfg from template
-        run: envsubst < test/docker/batapp/bats.cfg.template > ~/.bats.cfg
+        run: envsubst < docker/batapp/bats.cfg.template > ~/.bats.cfg
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -122,7 +122,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: test/docker/Dockerfile.backend
+          file: docker/Dockerfile.backend
           tags: dispersion-prediction-app-api
           load: true
           cache-from: type=gha,scope=api
@@ -132,8 +132,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: test/docker/Dockerfile.frontend
-          build-contexts: gsbio=gsbio-engine
+          file: docker/Dockerfile.frontend
+          build-contexts: gsbio=frontend/gsbio-engine
           tags: dispersion-prediction-app-frontend
           load: true
           cache-from: type=gha,scope=frontend
@@ -143,7 +143,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: test/docker/Dockerfile.gis
+          file: docker/Dockerfile.gis
           tags: dispersion-prediction-app-postgis
           load: true
           cache-from: type=gha,scope=postgis
@@ -165,7 +165,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: test/docker/Dockerfile.backend
+          file: docker/Dockerfile.backend
           tags: dispersion-prediction-app-api
           load: true
           cache-from: type=gha,scope=api
@@ -174,8 +174,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: test/docker/Dockerfile.frontend
-          build-contexts: gsbio=gsbio-engine
+          file: docker/Dockerfile.frontend
+          build-contexts: gsbio=frontend/gsbio-engine
           tags: dispersion-prediction-app-frontend
           load: true
           cache-from: type=gha,scope=frontend
@@ -184,7 +184,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: test/docker/Dockerfile.gis
+          file: docker/Dockerfile.gis
           tags: dispersion-prediction-app-postgis
           load: true
           cache-from: type=gha,scope=postgis
@@ -193,7 +193,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Create .bats.cfg from template
-        run: envsubst < test/docker/batapp/bats.cfg.template > ~/.bats.cfg
+        run: envsubst < docker/batapp/bats.cfg.template > ~/.bats.cfg
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -202,7 +202,7 @@ jobs:
           DATABASE_PASSWORD: bats
 
       - name: Run Docker API integration tests
-        run: SKIP_BUILD=true bash run-docker-api-test.sh
+        run: SKIP_BUILD=true bash scripts/run-docker-api-test.sh
 
       - name: Upload test results
         if: always()

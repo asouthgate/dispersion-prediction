@@ -185,9 +185,9 @@ def _run_r_pipeline(
     wif(work_dir, roost, features, params)
 
     r_script_map = {
-        "coverage": "scripts/run_coverage_pipeline.R",
-        "resistance": "scripts/run_resistance_pipeline_json.R",
-        "current": "scripts/run_circuitscape.R",
+        "coverage": "scripts/run-coverage-pipeline.R",
+        "resistance": "scripts/run-resistance-pipeline-json.R",
+        "current": "scripts/run-circuitscape.R",
     }
     rscript = r_script_map.get(stage)
     if not rscript:

@@ -1,5 +1,5 @@
-source('R/rasterfunc.R')
-source('R/pipeline.R')
+source('r-pkg/R/rasterfunc.R')
+source('r-pkg/R/pipeline.R')
 
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -9,7 +9,7 @@ working_dir <- dirname(input_path)
 logger::log_info("Working dir: %s", working_dir)
 
 logger::log_info("Preparing cs.ini from template")
-template_path <- "R/cs.ini.template"
+template_path <- "r-pkg/R/cs.ini.template"
 template <- readChar(template_path, file.info(template_path)$size)
 ini_content <- gsub("WORKINGDIR", working_dir, template, fixed = TRUE)
 ini_path <- file.path(working_dir, "cs.ini")

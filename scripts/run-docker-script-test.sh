@@ -5,7 +5,7 @@ rm -rf tmp/script-output/
 mkdir -p tmp/script-output/
 
 echo "Building api image"
-docker build -t dispersion-prediction-app-api -f test/docker/Dockerfile.backend .
+docker build -t dispersion-prediction-app-api -f docker/Dockerfile.backend .
 
 docker compose up -d
 sleep 10
@@ -19,7 +19,7 @@ docker compose exec api bash -c 'cat > /tmp/circuitscape/test_output/inputs.json
 JSONEOF'
 
 echo "Running circuitscape pipeline"
-docker compose exec api Rscript --no-init-file scripts/run_circuitscape.R /tmp/circuitscape/test_output/inputs.json
+docker compose exec api Rscript --no-init-file scripts/run-circuitscape.R /tmp/circuitscape/test_output/inputs.json
 
 echo "Copying results"
 docker compose cp api:/tmp/circuitscape/test_output/. ./tmp/script-output/

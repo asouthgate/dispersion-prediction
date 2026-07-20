@@ -3,7 +3,7 @@ services:
     image: dispersion-prediction-app-postgis
     build:
       context: .
-      dockerfile: test/docker/Dockerfile.gis
+      dockerfile: docker/Dockerfile.gis
     network_mode: host
     environment:
       POSTGRES_DB: ${DATABASE_NAME:?DATABASE_NAME must be set}
@@ -34,7 +34,7 @@ services:
   api:
     image: dispersion-prediction-app-api
     build:
-      dockerfile: test/docker/Dockerfile.backend
+      dockerfile: docker/Dockerfile.backend
     network_mode: host
     depends_on:
       postgis:
@@ -105,9 +105,9 @@ services:
   frontend:
     image: dispersion-prediction-app-frontend
     build:
-      dockerfile: test/docker/Dockerfile.frontend
+      dockerfile: docker/Dockerfile.frontend
       additional_contexts:
-        gsbio: ./gsbio-engine
+        gsbio: ./frontend/gsbio-engine
     network_mode: host
     environment:
       FRONTEND_PORT: ${FRONTEND_PORT:?FRONTEND_PORT must be set}

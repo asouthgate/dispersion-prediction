@@ -13,6 +13,6 @@ WORKDIR /app/frontend
 RUN npm run build
 
 FROM nginx:alpine
-COPY test/docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 EXPOSE 80

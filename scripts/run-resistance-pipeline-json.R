@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 #
 # Full resistance pipeline from JSON input.
-# Called by the API: Rscript scripts/run_resistance_pipeline_json.R <work_dir>/inputs.json
+# Called by the API: Rscript scripts/run-resistance-pipeline-json.R <work_dir>/inputs.json
 #
 # Reads roost (BNG), params, and optional lamps from inputs.json,
 # runs the full pipeline, and writes all result GeoTIFFs to the working directory.
@@ -13,13 +13,13 @@ library(jsonlite)
 logger::log_threshold(DEBUG)
 logger::log_info("=== Resistance pipeline (JSON) ===")
 
-source("R/algorithm_parameters.R")
-source("R/db.R")
-source("R/transform.R")
-source("R/rasterfunc.R")
-source("R/resistance.R")
-source("R/pipeline.R")
-source("R/write_outputs.R")
+source("r-pkg/R/algorithm_parameters.R")
+source("r-pkg/R/db.R")
+source("r-pkg/R/transform.R")
+source("r-pkg/R/rasterfunc.R")
+source("r-pkg/R/resistance.R")
+source("r-pkg/R/pipeline.R")
+source("r-pkg/R/write_outputs.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 input_path <- args[1]

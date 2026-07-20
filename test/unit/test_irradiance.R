@@ -5,8 +5,8 @@ library(raster)
 library(sp)
 
 setwd(getOption("project_root"))
-source("R/irradiance.R")
-source("R/resistance.R")
+source("r-pkg/R/irradiance.R")
+source("r-pkg/R/resistance.R")
 
 test_that("irradiance is computed as expected.", {
 

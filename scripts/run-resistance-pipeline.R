@@ -1,4 +1,4 @@
-source('R/pipeline.R')
+source('r-pkg/R/pipeline.R')
 
 # Load Rdata corresponding to user inputs
 

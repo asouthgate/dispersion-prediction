@@ -7,10 +7,10 @@ library(logger)
 library(terra)
 terraOptions(datatype="FLT8S")
 
-source("R/db.R")
-source("R/transform.R")
-source("R/rasterfunc.R")
-source("R/resistance.R")
+source("r-pkg/R/db.R")
+source("r-pkg/R/transform.R")
+source("r-pkg/R/rasterfunc.R")
+source("r-pkg/R/resistance.R")
 
 
 #' Save some plottable data to a png
@@ -399,11 +399,11 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
 }
 
 submit_resistance_pipeline <- function(input_data_fname) {
-    system(paste("srun Rscript scripts/run_resistance_pipeline.R", input_data_fname)) 
+    system(paste("srun Rscript scripts/run-resistance-pipeline.R", input_data_fname)) 
 }
 
 submit_circuitscape <- function(input_working_dir) {
-    system(paste("srun Rscript scripts/run_circuitscape.R", input_working_dir))
+    system(paste("srun Rscript scripts/run-circuitscape.R", input_working_dir))
 } 
 
 #' Call circuitscape given a working directory with inputs

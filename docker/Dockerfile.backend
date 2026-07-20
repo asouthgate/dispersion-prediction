@@ -40,9 +40,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ))'
 
 RUN echo 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/jammy/latest"))' >> /etc/R/Rprofile.site
-COPY .Rprofile.docker /app/.Rprofile
-COPY renv.lock /app/renv.lock
-COPY renv/ /app/renv/
+COPY r-pkg/.Rprofile.docker /app/.Rprofile
+COPY r-pkg/renv.lock /app/renv.lock
+COPY r-pkg/renv/ /app/renv/
 
 WORKDIR /app
 RUN Rscript -e "install.packages('renv')"
@@ -51,7 +51,7 @@ RUN Rscript -e "renv::restore(library = '/usr/local/lib/R/site-library')"
 
 RUN curl -fsSL https://install.julialang.org | sh -s -- -y
 ENV PATH="/root/.juliaup/bin:${PATH}"
-COPY test/docker/JuliaProject.toml /opt/julia/
+COPY docker/JuliaProject.toml /opt/julia/
 RUN julia -e 'using Pkg; Pkg.activate("/opt/julia"); Pkg.instantiate()'
 
 COPY api/requirements.txt /tmp/
@@ -59,10 +59,10 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
 WORKDIR /app
 COPY api/ /app/api/
-COPY R/ /app/R/
+COPY r-pkg/R/ /app/r-pkg/R/
 COPY scripts/ /app/scripts/
-COPY R/cs.ini.template /app/R/cs.ini.template
-COPY test/docker/batapp/bats.cfg.template /opt/bats.cfg.template
+COPY r-pkg/R/cs.ini.template /app/r-pkg/R/cs.ini.template
+COPY docker/batapp/bats.cfg.template /opt/bats.cfg.template
 RUN Rscript -e "options(interactive = FALSE); install.packages('testthat', clean = TRUE)"
 
 COPY test/ /app/test/
@@ -73,6 +73,6 @@ RUN mkdir -p "$PIPELINE_WORK_DIR"
 
 EXPOSE 8000
 
-COPY test/docker/backend-entrypoint.sh /opt/backend-entrypoint.sh
+COPY docker/backend-entrypoint.sh /opt/backend-entrypoint.sh
 RUN chmod +x /opt/backend-entrypoint.sh
 ENTRYPOINT ["/opt/backend-entrypoint.sh"]
