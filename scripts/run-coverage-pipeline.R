@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 #
 # Coverage pipeline: fetch DTM/DSM/LCM from database and write as GeoTIFFs.
-# Called by the API: Rscript scripts/run_coverage_pipeline.R <work_dir>/inputs.json
+# Called by the API: Rscript scripts/run-coverage-pipeline.R <work_dir>/inputs.json
 #
 # Reads roost (BNG) and params from inputs.json,
 # fetches raster layers resampled to a square ground raster grid,
@@ -13,11 +13,11 @@ library(jsonlite)
 logger::log_threshold(DEBUG)
 logger::log_info("=== Coverage pipeline ===")
 
-source("R/algorithm_parameters.R")
-source("R/db.R")
-source("R/transform.R")
-source("R/rasterfunc.R")
-source("R/pipeline.R")
+source("r-pkg/R/algorithm_parameters.R")
+source("r-pkg/R/db.R")
+source("r-pkg/R/transform.R")
+source("r-pkg/R/rasterfunc.R")
+source("r-pkg/R/pipeline.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 input_path <- args[1]

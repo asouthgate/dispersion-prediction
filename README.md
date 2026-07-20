@@ -8,13 +8,13 @@ Currently, this repository makes use of a submodule for the `gsbio` engine durin
 development. Firstly, update the submodule:
 
 ```bash
-git submodules update --init --recursive
+git submodule update --init --recursive
 ```
 
-Intall and build the engine with:
+Install and build the engine with:
 
 ```bash
-npm install && npm run build
+cd frontend/gsbio-engine && npm install && npm run build
 ```
 
 The compose stack contains a self-seeding database. However, the `pmtiles` file needs to be 
@@ -33,7 +33,7 @@ For the front-end:
 
 ```bash
 # engine unit tests
-cd gsbio-engine && npx vitest run
+cd frontend/gsbio-engine && npx vitest run
 
 # frontend type-check + build
 cd frontend && npm run build
@@ -48,7 +48,7 @@ pytest api/test/ -v
 For the integration/smoke tests:
 
 ```bash
-bash run-docker-api-test.sh
+bash scripts/run-docker-api-test.sh
 ```
 
 # Deployment
@@ -137,7 +137,7 @@ sudo -u postgres psql -d umami -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 sudo -u postgres psql -d umami -c "GRANT ALL ON SCHEMA public TO bats;"
 
 # 6. Build the API image
-docker build -f test/docker/Dockerfile.backend -t dispersion-prediction-app-api:v1.0.0 .
+docker build -f docker/Dockerfile.backend -t dispersion-prediction-app-api:v1.0.0 .
 
 # 7. Build the frontend
 cd frontend && npm ci && npm run build && cd ..

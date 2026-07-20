@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@gsbio/engine": "file:../gsbio-engine",
+    "@gsbio/engine": "file:./gsbio-engine",
     "@turf/circle": "^7.3.5",
     "@turf/helpers": "^7.3.5",
     "proj4": "^2.20.9",

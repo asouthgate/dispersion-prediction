@@ -15,7 +15,7 @@ import sys
 
 # Ensure the API package is importable in tests that use module-style imports
 # matching the worker (which runs with cwd=/app/api).
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "api"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 os.environ.setdefault("ANALYTICS_HASH_SECRET", "test-secret")
 # Configure Celery to run eagerly before importing anything that pulls celery_app.

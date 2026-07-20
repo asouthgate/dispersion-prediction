@@ -1,18 +1,18 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-COPY --from=gsbio . ./gsbio-engine/
+COPY --from=gsbio . ./frontend/gsbio-engine/
 COPY frontend/package.json frontend/package-lock.json ./frontend/
-RUN cd gsbio-engine && npm install
+RUN cd frontend/gsbio-engine && npm install
 RUN cd frontend && npm install
 
 COPY frontend/ ./frontend/
-RUN cd gsbio-engine && npm run build
+RUN cd frontend/gsbio-engine && npm run build
 
 WORKDIR /app/frontend
 RUN npm run build
 
 FROM nginx:alpine
-COPY test/docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 EXPOSE 80

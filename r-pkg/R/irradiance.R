@@ -1,6 +1,6 @@
 library(Rcpp)
 library(logger)
-sourceCpp("R/irradiance.cpp")
+sourceCpp("r-pkg/R/irradiance.cpp")
 
 wrap_cal_irradiance <- function(lampdf, soft, hard, terr, absorbance=0.5, pixw=1, cutoff=100, sensor_ht=0) {
 
