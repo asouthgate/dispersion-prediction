@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { PipelineStage } from '../models/horseshoeBat';
-import { useModel, useRun, useResults, useEngine, useEngineState, extractResultLayers, computePixelDimensions, computeMinResolution } from '@gsbio/engine';
+import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDimensions, computeMinResolution } from '@gsbio/engine';
 import type { RunLogEntry, DataFeature } from '@gsbio/engine';
 import { RunPanel, ResultsPanel } from '@gsbio/engine';
 import { RunLogModal } from './RunLogModal';
@@ -45,16 +45,9 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
 
   const handleDownload = async (runId: string): Promise<void> => {
     const rec = engine.findRun(runId);
-    if (!rec?.result) return;
-    const layers = extractResultLayers(rec.result, runId);
-    const imageEnv = layers.find((l) => l.envelope.kind === 'image')?.envelope as
-      { kind: 'image'; url: string; bounds: [number, number, number, number] } | undefined;
-    if (!imageEnv) return;
-    const match = imageEnv.url.match(/\/api\/rasters\/([^/]+)\//);
-    if (!match) return;
-    const jobId = match[1];
+    if (!rec?.result || !rec.taskId) return;
     try {
-      const res = await fetchWithAuth(`/api/rasters/${jobId}/download`);
+      const res = await fetchWithAuth(`/api/rasters/${rec.taskId}/download`);
       if (!res.ok) throw new Error(`Download failed: ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

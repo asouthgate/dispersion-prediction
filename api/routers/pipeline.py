@@ -7,10 +7,9 @@ import uuid
 
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException, status
-import redis.asyncio as aioredis
 
 from celery_app import celery_app
-from config import AUTH_REDIS_URL, MAX_PIXEL_DIMENSION
+from config import MAX_PIXEL_DIMENSION
 from middleware.auth import require_auth
 from schemas.pipeline import (
     PipelineRequest,
@@ -19,6 +18,7 @@ from schemas.pipeline import (
     ResultLayerInfo,
 )
 from services.analytics import daily_token_hash, emit_pipeline_submit
+from services.redis import get_redis
 from tasks import run_pipeline_task, _payload_hash, _create_work_dir
 
 logger = logging.getLogger(__name__)
@@ -26,15 +26,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 DEDUP_TTL_SECONDS = 3600
-
-_redis: aioredis.Redis | None = None
-
-
-def _get_dedup_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(AUTH_REDIS_URL, decode_responses=True)
-    return _redis
 
 
 _STATE_MAP = {
@@ -88,7 +79,7 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
     payload_hash = _payload_hash(stage, roost, features, params)
     work_dir = _create_work_dir(payload_hash)
 
-    redis = _get_dedup_redis()
+    redis = get_redis()
     dedup_key = f"dedup:{payload_hash}"
     try:
         existing = await redis.get(dedup_key)
@@ -105,7 +96,7 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
     try:
         await redis.set(dedup_key, task_id, ex=DEDUP_TTL_SECONDS, nx=True)
         reverse_key = f"task_to_hash:{task_id}"
-        await redis.set(reverse_key, payload_hash, ex=DEDUP_TTL_SECONDS)
+        await redis.set(reverse_key, payload_hash, ex=DEDUP_TTL_SECONDS * 24)
         await redis.set(f"job:owner:{task_id}", token, ex=DEDUP_TTL_SECONDS)
     except Exception as e:
         logger.error("Failed to write dedup keys to Redis: %s", e)
@@ -173,7 +164,7 @@ async def get_job_status(job_id: str):
 
 @router.delete("/{job_id}")
 async def cancel_job(job_id: str, token: str = Depends(require_auth)):
-    redis = _get_dedup_redis()
+    redis = get_redis()
     try:
         owner = await redis.get(f"job:owner:{job_id}")
     except Exception as e:

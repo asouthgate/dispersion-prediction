@@ -35,6 +35,7 @@ const MAX_BOUNDS: [[number, number], [number, number]] = [[-14, 49.5], [4, 61.5]
 const API_BASE = '/api';
 const PMTILES_FILENAME = 'uk.pmtiles';
 
+/** For vector map data */
 const MAP_PALETTE: MapPalette = {
   background: 'rgba(63, 72, 62, 1)',
   land: 'rgba(55, 83, 76, 1)',
@@ -158,6 +159,7 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
   const lastKey = useRef<string | null>(null);
   const accentColor = readAccentColor();
 
+  /** Ensure that there is only one roost */
   useEffect(() => {
     let cleaning = false;
     return engine.subscribe(() => {

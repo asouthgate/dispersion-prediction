@@ -120,7 +120,7 @@ def _run_coverage(
         tif_to_png(tif_path, png_path, bounds_wgs84, colormap=colormaps.get(name, "magma"))
         layers.append({
             "id": name.upper(),
-            "url": f"/api/rasters/{os.path.basename(work_dir)}/{name}.png",
+            "url": f"/api/rasters/{task.request.id}/{name}.png",
             "bounds": list(bounds_wgs84),
         })
 
@@ -292,7 +292,7 @@ def _run_r_pipeline(
         bounds = get_bounds_for_tif(tif_path)
         result_layers.append({
             "id": layer["name"],
-            "url": f"/api/rasters/{os.path.basename(work_dir)}/{layer['id']}.png",
+            "url": f"/api/rasters/{task.request.id}/{layer['id']}.png",
             "bounds": list(bounds),
         })
 
