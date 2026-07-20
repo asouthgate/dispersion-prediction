@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import signal
+import shutil as _shutil
 import subprocess
 import time
 from typing import Any
@@ -21,6 +22,8 @@ from services.r_bridge import wgs84_to_bng
 from services.raster_service import tif_to_png
 from services.analytics import emit_pipeline_complete
 from services.r_bridge import _write_input_files as wif, collect_results
+from services.raster_service import tif_to_png, get_bounds_for_tif
+from services.raster_service import get_bounds_for_tif
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +279,6 @@ def _run_r_pipeline(
     for layer in layers_raw:
         tif_path = layer["tif_path"]
         png_path = os.path.join(work_dir, "images", f"{layer['id']}.png")
-        from services.raster_service import tif_to_png, get_bounds_for_tif
         colormap = "plasma" if "current" in layer["id"] else "magma"
         try:
             bounds = get_bounds_for_tif(tif_path)
@@ -287,7 +289,6 @@ def _run_r_pipeline(
     result_layers = []
     for layer in layers_raw:
         tif_path = layer["tif_path"]
-        from services.raster_service import get_bounds_for_tif
         bounds = get_bounds_for_tif(tif_path)
         result_layers.append({
             "id": layer["name"],
@@ -369,7 +370,6 @@ def run_pipeline_task(
 @shared_task(name="tasks.cleanup_work_dirs")
 def cleanup_work_dirs() -> None:
     """Periodic task: prune work directories older than the TTL. Scheduled by celery-beat."""
-    import shutil as _shutil
 
     base = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
     ttl_hours = float(os.environ.get("PIPELINE_WORK_DIR_TTL_HOURS", "24"))
