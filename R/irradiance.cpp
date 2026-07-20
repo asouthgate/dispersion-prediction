@@ -23,10 +23,11 @@ void cal_irradiance_raycast(NumericMatrix& irr, int ri_lamp, int cj_lamp, float 
         return;
     }
 
-    int minj = std::max(cj_lamp - cutoff, 0);
-    int maxj = std::min(n, cj_lamp + cutoff);
-    int mini = std::max(ri_lamp - cutoff, 0);
-    int maxi = std::min(m, ri_lamp + cutoff);
+    int px_cutoff = std::ceil(cutoff / pixw);
+    int minj = std::max(cj_lamp - px_cutoff, 0);
+    int maxj = std::min(n, cj_lamp + px_cutoff);
+    int mini = std::max(ri_lamp - px_cutoff, 0);
+    int maxi = std::min(m, ri_lamp + px_cutoff);
 
     for (int cj = minj; cj < maxj; ++cj) {
         for (int ri = mini; ri < maxi; ++ri) {
@@ -81,7 +82,7 @@ void cal_irradiance_raycast(NumericMatrix& irr, int ri_lamp, int cj_lamp, float 
 NumericMatrix cal_irradiance(NumericMatrix lights, 
                                     NumericMatrix soft_surf, NumericMatrix hard_surf, NumericMatrix terrain,
                                     int xmin, int xmax, int ymin, int ymax,
-                                    float abs, int pix, int cutoff, float sensor_ht) {
+                                    float abs, float pix, int cutoff, float sensor_ht) {
     
     // setup output
     int m = soft_surf.nrow();

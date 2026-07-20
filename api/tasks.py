@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import signal
+import shutil as _shutil
 import subprocess
 import time
 from typing import Any
@@ -21,6 +22,8 @@ from services.r_bridge import wgs84_to_bng
 from services.raster_service import tif_to_png
 from services.analytics import emit_pipeline_complete
 from services.r_bridge import _write_input_files as wif, collect_results
+from services.raster_service import tif_to_png, get_bounds_for_tif
+from services.raster_service import get_bounds_for_tif
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +120,7 @@ def _run_coverage(
         tif_to_png(tif_path, png_path, bounds_wgs84, colormap=colormaps.get(name, "magma"))
         layers.append({
             "id": name.upper(),
-            "url": f"/api/rasters/{os.path.basename(work_dir)}/{name}.png",
+            "url": f"/api/rasters/{task.request.id}/{name}.png",
             "bounds": list(bounds_wgs84),
         })
 
@@ -273,15 +276,23 @@ def _run_r_pipeline(
             ["Rscript", "--no-init-file", plot_script, work_dir],
             cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
         )
+    for layer in layers_raw:
+        tif_path = layer["tif_path"]
+        png_path = os.path.join(work_dir, "images", f"{layer['id']}.png")
+        colormap = "plasma" if "current" in layer["id"] else "magma"
+        try:
+            bounds = get_bounds_for_tif(tif_path)
+            tif_to_png(tif_path, png_path, bounds, colormap=colormap)
+        except Exception as e:
+            logger.warning("Pre-render failed for %s: %s", layer["id"], e)
 
     result_layers = []
     for layer in layers_raw:
         tif_path = layer["tif_path"]
-        from services.raster_service import get_bounds_for_tif
         bounds = get_bounds_for_tif(tif_path)
         result_layers.append({
             "id": layer["name"],
-            "url": f"/api/rasters/{os.path.basename(work_dir)}/{layer['id']}.png",
+            "url": f"/api/rasters/{task.request.id}/{layer['id']}.png",
             "bounds": list(bounds),
         })
 
@@ -359,7 +370,6 @@ def run_pipeline_task(
 @shared_task(name="tasks.cleanup_work_dirs")
 def cleanup_work_dirs() -> None:
     """Periodic task: prune work directories older than the TTL. Scheduled by celery-beat."""
-    import shutil as _shutil
 
     base = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
     ttl_hours = float(os.environ.get("PIPELINE_WORK_DIR_TTL_HOURS", "24"))

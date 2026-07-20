@@ -8,7 +8,8 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from middleware.auth import require_auth, _get_redis
+from middleware.auth import require_auth
+from services.redis import get_redis
 from config import TOKEN_TTL_SECONDS, RATE_LIMIT_TOKENS_PER_MINUTE
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ async def create_token(request: Request):
     """Generate a new session token stored in Redis with a TTL."""
     ip = _client_ip(request)
     rate_key = f"auth:rate:{ip}"
-    redis = _get_redis()
+    redis = get_redis()
 
     try:
         count = await redis.incr(rate_key)
@@ -68,7 +69,7 @@ async def revoke_token(token: str = Depends(require_auth)):
     """Revoke the current session token."""
     key = f"auth:token:{token}"
     try:
-        await _get_redis().delete(key)
+        await get_redis().delete(key)
     except Exception as e:
         logger.error("Failed to revoke token: %s", e)
         raise HTTPException(

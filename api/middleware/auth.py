@@ -6,22 +6,12 @@ import logging
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import redis.asyncio as aioredis
-
-from config import AUTH_REDIS_URL, TOKEN_TTL_SECONDS
+from config import TOKEN_TTL_SECONDS
+from services.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
-
-_redis: aioredis.Redis | None = None
-
-
-def _get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(AUTH_REDIS_URL, decode_responses=True)
-    return _redis
 
 
 async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
@@ -34,7 +24,7 @@ async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(secur
     key = f"auth:token:{token}"
 
     try:
-        redis = _get_redis()
+        redis = get_redis()
         value = await redis.getex(key, ex=TOKEN_TTL_SECONDS)
     except Exception as e:
         logger.error("Redis error during auth check: %s", e)

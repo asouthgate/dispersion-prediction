@@ -20,8 +20,8 @@ import time
 import urllib.request
 import urllib.error
 
-DEFAULT_API = "http://localhost:8000"
-DEFAULT_FRONTEND = "http://localhost:5180"
+DEFAULT_API = "http://localhost:8084"
+DEFAULT_FRONTEND = "http://localhost:5184"
 DEFAULT_PMTILES_FILE = "test.pmtiles"
 MAX_RETRIES = 30
 RETRY_INTERVAL = 2

@@ -325,7 +325,8 @@ cal_lamp_irradiance <- function(lamps, soft_surf, hard_surf, dtm, ext) {
         return(resistance)
     }
 
-    point_irradiance <- wrap_cal_irradiance(lamps, soft_surf, hard_surf, dtm)
+    pixw <- raster::res(dtm)[1]
+    point_irradiance <- wrap_cal_irradiance(lamps, soft_surf, hard_surf, dtm, pixw=pixw, cutoff=ext)
     point_irradiance
 }
 

@@ -72,7 +72,7 @@ class JobLifecycleTests(unittest.TestCase):
         fake_redis.get.return_value = "fake-token"
         fake_redis.delete = AsyncMock()
 
-        with patch.object(p, "_get_dedup_redis", return_value=fake_redis):
+        with patch.object(p, "get_redis", return_value=fake_redis):
             with patch("routers.pipeline.AsyncResult") as mock_async:
                 mock_result = AsyncMock()
                 mock_result.state = "STARTED"

@@ -1,12 +1,10 @@
-resolver 127.0.0.11 valid=10s;
-
 server {
-    listen 80;
+    listen ${FRONTEND_PORT};
     server_name localhost;
     root /usr/share/nginx/html;
     index index.html;
 
-    set $api_upstream http://api:8000;
+    set $api_upstream http://127.0.0.1:${API_PORT};
 
     location /api/ {
         proxy_pass $api_upstream;

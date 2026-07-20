@@ -5,12 +5,12 @@ from __future__ import annotations
 from celery import Celery
 from celery.schedules import crontab
 
-from config import PIPELINE_TIMEOUT, _broker_url, _result_backend
+from config import PIPELINE_TIMEOUT, CELERY_BROKER_URL, CELERY_RESULT_BACKEND
 
 celery_app = Celery(
     "dispersion",
-    broker=_broker_url,
-    backend=_result_backend,
+    broker=CELERY_BROKER_URL,
+    backend=CELERY_RESULT_BACKEND,
     include=["tasks"],
 )
 

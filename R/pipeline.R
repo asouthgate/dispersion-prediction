@@ -191,7 +191,7 @@ fetch_raster_inputs <- function(algorithm_parameters, groundrast, working_dir) {
     } else {
         logger::log_info("LCM raster fetch succeeded")
     }
-    r_lcm <- raster::resample(lcm, groundrast)
+    r_lcm <- raster::resample(lcm, groundrast, method='ngb')
 
     raster_failed <- dsm_failed | dtm_failed | lcm_failed
 

@@ -144,7 +144,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         }
 
         ctx.onProgress?.({ step: 'submit', fraction: 1, label: `${layers.length} layers` });
-        return { layers, summary: { stage, layerCount: layers.length } };
+        return { layers, summary: { stage, layerCount: layers.length }, taskId: job_id };
       } finally {
         signal.removeEventListener('abort', onAbort);
       }

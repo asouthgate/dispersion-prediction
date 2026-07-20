@@ -20,5 +20,5 @@ export function bngToWgs84LngLat(easting: number, northing: number): [number, nu
 
 export function formatCoord(n: number): string {
   if (n == null || isNaN(n)) return '';
-  return n.toFixed(1);
+  return n.toFixed(0);
 }

@@ -1,29 +1,35 @@
 # Introduction
 
-This repository contains the code that implements the *Predicting bat dispersion through urban environments* project. It now has two interfaces:
+This repository contains code for the dispersion-prediction app. 
 
-- **React + FastAPI** (new) — a TypeScript/React frontend using the `gsbio-engine` for map drawing and a FastAPI Python backend that calls the existing R pipeline as a subprocess.
+# Developer Quick Start
 
-Most of the calculations are performed by [R](https://www.r-project.org) to set up the inputs to the [Circuitscape](https://docs.circuitscape.org/Circuitscape.jl/latest/) calculation that is implemented in [Julia](https://julialang.org). The app queries a [PostGIS](https://postgis.net) database for the vector and raster data required to perform the calculations.
-
-# Quick Start (React + FastAPI)
-
-Build the engine, then start the API and frontend in two terminals:
+Currently, this repository makes use of a submodule for the `gsbio` engine during 
+development. Firstly, update the submodule:
 
 ```bash
-# Terminal 1 — build and start the API
-cd api
-pip install -r requirements.txt       # or use the existing .venv
-.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-# Terminal 2 — build and start the frontend
-cd gsbio-engine && npm install && npm run build
-cd ../frontend && npm install && npm run dev -- --port 5180 --host 0.0.0.0
+git submodules update --init --recursive
 ```
 
-Open `http://localhost:5180`. The frontend runs its own Vite dev server on port 5180; it proxies pipeline requests to the API on port 8000.
+Intall and build the engine with:
 
-## Running tests
+```bash
+npm install && npm run build
+```
+
+The compose stack contains a self-seeding database. However, the `pmtiles` file needs to be 
+available for serving map data. Ensure this available in `data/uk-global-base.pmtiles`. 
+
+Then:
+
+```bash
+docker compose up
+```
+Open `http://localhost:5180`.
+
+# Running tests
+
+For the front-end:
 
 ```bash
 # engine unit tests
@@ -33,87 +39,126 @@ cd gsbio-engine && npx vitest run
 cd frontend && npm run build
 ```
 
-## Project structure
-
-```
-frontend/       React + TypeScript + gsbio-engine (Vite)
-  src/
-    components/   MapView, SidePanel, RoostPanel, ParameterPanel, FeaturePanel, GeneratePanel, FileUpload
-    models/       horseshoeBat model definition + executor (API polling)
-    utils/        WGS84 ↔ BNG coordinate transforms (proj4)
-api/            FastAPI Python backend
-  routers/       POST /api/pipeline/{coverage,resistance,current}, GET /api/pipeline/{job_id}
-  services/      R subprocess bridge, PostGIS queries, raster → PNG conversion
-gsbio-engine/   Simulation engine (symlinked, built separately)
-app/            Legacy React prototype (not used)
-```
-
-
-
-# Installation
-
-## Centos Packages
-
-Install the following Centos packages with `yum`:
+For the back-end:
 
 ```bash
-sudo yum install udunits2-devel
-sudo yum install geos geos-devel
-sudo yum install postgresql-devel
+pytest api/test/ -v
 ```
 
-## R Packages
-
-Run the following commands in the R console to install the required packages:
-
-```R
-install.packages("glue")
-install.packages("JuliaCall")
-install.packages("leaflet")
-install.packages("R6")
-install.packages("raster")
-install.packages("rpostgis")
-install.packages("sf")
-install.packages("stringr")
-install.packages("uuid")
-install.packages("vroom")
-```
-
-## Julia Package
-
-Run the following commands in the Julia console to install the required Circuitscape package:
-
-```julia
-using Pkg
-Pkg.add("Circuitscape")
-```
-
-# Environment Variables
-
-The default values for the PostgreSQL database name and the PostgreSQL port are:
+For the integration/smoke tests:
 
 ```bash
-DATABASE_NAME="os"
-DATABASE_PORT=5432
+bash run-docker-api-test.sh
 ```
 
-Configure any of these values by creating a `.env` file with different values, e.g.:
+# Deployment
+
+To deploy as a standalone single-node app. All containers use `network_mode: host`,
+sharing the host's network stack — `localhost` works for inter-container communication.
+
+## System components
+
+The `docker-compose.prod.yml` stack runs four containers:
+
+- **redis** (port 6379): Celery message broker and auth token store
+- **api** (port 8000): FastAPI backend, serves `/api/*` including PMTiles
+- **celery_worker**: async pipeline runner + beat (periodic cleanup)
+- **umami** (port 3000): self-hosted web analytics
+
+You'll also need:
+
+- **Reverse proxy** (nginx) serves the built frontend statically and proxies `/api/` to `127.0.0.1:8000`.
+  Example config:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /opt/dispersion-app/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 10s;
+    }
+}
+```
+
+Install and enable:
 
 ```bash
-DATABASE_PORT=5555
-DATABASE_NAME="my-bat-data"
+sudo apt install nginx
+sudo nano /etc/nginx/sites-available/dispersion.conf   # paste config above
+sudo ln -s /etc/nginx/sites-available/dispersion.conf /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+sudo ufw allow 80/tcp
 ```
 
-# Software Versions
+## Prerequisites
 
-The app runs with the following software versions:
+- **PostgreSQL with PostGIS** (external, not in the prod compose)
+- **Docker & Docker Compose**
+- **nginx** (see above)
+- `postgis` package for `shp2pgsql` / `raster2pgsql` CLI tools: `sudo apt install postgis`
 
-|Software|Version|
-|--------|-------|
-|R       |4.0.4  |
-|Julia   |1.5.4  |
-|Postgres|13.2   |
-|PostGIS |3.1.1  |
+## Setup steps
+
+```bash
+# 1. Create the application user and database
+sudo -u postgres createuser -P bats   # enter password
+sudo -u postgres createdb -O bats os
+
+# 2. Install PostGIS extensions
+sudo -u postgres psql -d os -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+sudo -u postgres psql -d os -c "CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+
+# 3. Place the PMTiles map file
+mkdir -p /opt/dispersion-app/data
+cp data/uk-global-base.pmtiles /opt/dispersion-app/data/
+
+# 4. Seed the database with GIS test data
+cd test/data
+SEED_DIR=$(pwd)/seed DATABASE_HOST=localhost bash seed/seed-test-data.sh
+cd ../..
+
+# 5. Create the Umami analytics database
+sudo -u postgres psql -c "CREATE DATABASE umami OWNER bats;"
+sudo -u postgres psql -d umami -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+sudo -u postgres psql -d umami -c "GRANT ALL ON SCHEMA public TO bats;"
+
+# 6. Build the API image
+docker build -f test/docker/Dockerfile.backend -t dispersion-prediction-app-api:v1.0.0 .
+
+# 7. Build the frontend
+cd frontend && npm ci && npm run build && cd ..
+
+# 8. Configure environment
+cp .env.example .env
+# Edit .env — at minimum set CORS_ORIGINS to your domain/IP,
+# and change passwords and secrets from their defaults.
+
+# 9. Start the stack
+docker compose -f docker-compose.prod.yml up -d
+```
+
+## Optional: Redis overcommit
+
+To suppress the Redis memory overcommit warning:
+
+```bash
+sudo sysctl vm.overcommit_memory=1
+echo "vm.overcommit_memory = 1" | sudo tee -a /etc/sysctl.conf
+```
 
 # Data
 
@@ -127,14 +172,7 @@ The landcover is from the CEH landcover map:
 
 * https://www.ceh.ac.uk/services/land-cover-map-2015
  
-Lidar DTM/DSM is also used to figure out where hedgerows/forest is, which is available from the government: 
+Lidar DTM/DSM is also used to figure out where hedgerows/forest is, which is available from: 
 
 * https://data.gov.uk/dataset/fba12e80-519f-4be2-806f-41be9e26ab96/lidar-composite-dsm-2017-2m
 * https://data.gov.uk/dataset/002d24f0-0056-4176-b55e-171ba7f0e0d5/lidar-composite-dtm-2017-2m
-
-
-# Resources
-
-Some useful articles:
-
-* [How can Postgis and R be used as a GIS?](https://rstudio-pubs-static.s3.amazonaws.com/304489_1a4dff62928e4ffeb4267e15cff254ca.html)

@@ -189,6 +189,9 @@ jobs:
           load: true
           cache-from: type=gha,scope=postgis
 
+      - name: Create .env from example
+        run: cp .env.example .env
+
       - name: Create .bats.cfg from template
         run: envsubst < test/docker/batapp/bats.cfg.template > ~/.bats.cfg
         env:

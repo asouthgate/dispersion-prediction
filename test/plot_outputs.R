@@ -23,7 +23,7 @@ plot_directory <- function(working_dir) {
 
     for (tif_path in tif_files) {
         layer_name <- tools::file_path_sans_ext(basename(tif_path))
-        savepath <- file.path(img_dir, paste0(layer_name, ".png"))
+        savepath <- file.path(img_dir, paste0("diag_", layer_name, ".png"))
 
         tryCatch({
             rast <- raster::raster(tif_path)
