@@ -113,14 +113,31 @@ services:
       FRONTEND_PORT: ${FRONTEND_PORT:?FRONTEND_PORT must be set}
       API_PORT: ${API_PORT:?API_PORT must be set}
 
+  umami-db:
+    image: postgres:16
+    network_mode: host
+    command: -p 5433
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD:?UMAMI_DB_PASSWORD must be set}
+    volumes:
+      - umami_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami -p 5433"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   umami:
     image: docker.umami.is/umami-software/umami:postgresql-latest
     network_mode: host
     depends_on:
-      postgis:
+      umami-db:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${UMAMI_DATABASE_URL:?UMAMI_DATABASE_URL must be set}
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD:?UMAMI_DB_PASSWORD must be set}@localhost:5433/umami
       APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
       PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
@@ -130,3 +147,4 @@ volumes:
   pgdata:
   redisdata:
   pipeline_work:
+  umami_pgdata:
