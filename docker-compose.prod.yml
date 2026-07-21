@@ -24,7 +24,7 @@ x-app-defaults: &app-defaults
   network_mode: host
   volumes:
     - pipeline_work:/tmp/circuitscape
-    - /opt/dispersion-app/data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+    - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
   logging:
     driver: json-file
     options:
@@ -112,7 +112,7 @@ services:
     restart: always
     network_mode: host
     environment:
-      DATABASE_URL: postgresql://${DATABASE_USER:?DATABASE_USER must be set}:${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}@${DATABASE_HOST:?DATABASE_HOST must be set}:${DATABASE_PORT:?DATABASE_PORT must be set}/umami
+      DATABASE_URL: ${UMAMI_DATABASE_URL:?UMAMI_DATABASE_URL must be set}
       APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
       PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
