@@ -94,6 +94,19 @@ services:
         reservations:
           memory: 512M
 
+  frontend:
+    image: dispersion-prediction-app-frontend:v1.0.0
+    restart: always
+    network_mode: host
+    environment:
+      FRONTEND_PORT: ${FRONTEND_PORT:?FRONTEND_PORT must be set}
+      API_PORT: ${API_PORT:?API_PORT must be set}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
   umami:
     image: docker.umami.is/umami-software/umami:postgresql-latest
     restart: always
