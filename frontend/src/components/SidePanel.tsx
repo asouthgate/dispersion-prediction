@@ -21,9 +21,9 @@ const iconStyle = { width: 16, height: 16 };
 const SECTIONS: SectionDef[] = [
   { id: 'lights', icon: <Bulb style={iconStyle} />, label: 'Street Lights' },
   { id: 'params', icon: '⚙', label: 'Parameters' },
-  { id: 'roost', icon: '◯', label: 'Roost', defaultOpen: true },
-  { id: 'drawings', icon: '◿', label: 'Drawings', defaultOpen: true },
-  { id: 'generate', icon: '▦', label: 'Generate', defaultOpen: true },
+  { id: 'roost', icon: '◯', label: 'Roost' },
+  { id: 'drawings', icon: '◿', label: 'Drawings' },
+  { id: 'generate', icon: '▦', label: 'Generate' },
   { id: 'help', icon: '⍰', label: 'Help' },
 ];
 
@@ -96,7 +96,6 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
   return (
     <div className="side-panel">
       <div className="side-panel-top-row">
-{/*        <span className="side-panel-title">ECHO.MAPPER</span> */}
         <button className="panel-collapse-btn" onClick={() => setCollapsed(true)} title="Collapse panel">▶</button>
       </div>
       <div className="side-panel-scroll">
@@ -118,6 +117,16 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
             </div>
           );
         })}
+        <div className="side-panel__logos">
+          <div className="side-panel__logos-track">
+            <img src="/logos/logo_cu.svg" alt="Cardiff University" className="side-panel__logo" />
+            <img src="/logos/logo_hefcw_inv.png" alt="HEFCW" className="side-panel__logo" />
+            <img src="/logos/logo_su.svg" alt="University of Sussex" className="side-panel__logo" />
+            <img src="/logos/logo_cu.svg" alt="" className="side-panel__logo" aria-hidden="true" />
+            <img src="/logos/logo_hefcw_inv.png" alt="" className="side-panel__logo" aria-hidden="true" />
+            <img src="/logos/logo_su.svg" alt="" className="side-panel__logo" aria-hidden="true" />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -876,3 +876,40 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 }
 .privacy-modal__body p { margin-bottom: 12px; }
 .privacy-modal__body p:last-child { margin-bottom: 0; }
+
+/* =================== SIDE PANEL LOGO SCROLLER =================== */
+
+.side-panel__logos {
+  padding: 14px 14px;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+
+.side-panel__logos-track {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: max-content;
+  animation: logoScroll 24s linear infinite;
+}
+
+.side-panel__logos-track:hover {
+  animation-play-state: paused;
+}
+
+.side-panel__logo {
+  height: 56px;
+  width: auto;
+  opacity: 0.65;
+  transition: opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.side-panel__logo:hover {
+  opacity: 1;
+}
+
+@keyframes logoScroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
