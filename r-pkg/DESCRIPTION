@@ -1,0 +1,27 @@
+Package: horseshoe-dispersion
+Title: App for modelling bat flight lines on a map
+Description: 
+Version: 0.1
+Author: AJ Southgate (southgateJA@cardiff.ac.uk)
+Maintainer: 
+License: Abbreviation for an open source license
+Suggests:
+    mockery,
+    mockr,
+    testthat (>= 3.0.0)
+Imports:
+    configr,
+    DBI,
+    glue,
+    JuliaCall,
+    logger,
+    R6,
+    raster,
+    rpostgis,
+    sf,
+    sp,
+    stringr,
+    terra
+Config/testthat/edition: 3
+RoxygenNote: 7.2.1
+Encoding: UTF-8

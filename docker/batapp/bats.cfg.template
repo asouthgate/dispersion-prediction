@@ -1,0 +1,12 @@
+[database]
+host = ${DATABASE_HOST}
+name = ${DATABASE_NAME}
+password = ${DATABASE_PASSWORD}
+user = ${DATABASE_USER}
+port = ${DATABASE_PORT}
+roads_table = roads
+rivers_table = rivers
+buildings_table = buildings
+dtm_table = dtm
+dsm_table = dsm
+lcm_table = lcm

@@ -1,0 +1,132 @@
+services:
+  postgis:
+    image: dispersion-prediction-app-postgis
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gis
+    network_mode: host
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:?DATABASE_NAME must be set}
+      POSTGRES_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./test/data/seed:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DATABASE_USER:?DATABASE_USER must be set} -d ${DATABASE_NAME:?DATABASE_NAME must be set}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    network_mode: host
+    command: redis-server --port ${REDIS_PORT:?REDIS_PORT must be set}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:?REDIS_PORT must be set}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: dispersion-prediction-app-api
+    build:
+      dockerfile: docker/Dockerfile.backend
+    network_mode: host
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      API_PORT: ${API_PORT:?API_PORT must be set}
+      DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
+      DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
+      DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
+      DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
+      AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
+      PIPELINE_WORK_DIR: /tmp/circuitscape
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:?PIPELINE_TIMEOUT must be set}
+      PMTILES_DIR: /data/pmtiles
+      UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:?UMAMI_ADMIN_USER must be set}
+      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:?UMAMI_ADMIN_PASSWORD must be set}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
+    volumes:
+      - pipeline_work:/tmp/circuitscape
+      - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+      - ./test/data/test.pmtiles:/data/pmtiles/test.pmtiles:ro
+
+  celery_worker:
+    image: dispersion-prediction-app-api
+    network_mode: host
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
+      DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
+      DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
+      DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
+      AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
+      PIPELINE_WORK_DIR: /tmp/circuitscape
+      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:?PIPELINE_TIMEOUT must be set}
+      PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:?PIPELINE_MAX_WORKERS must be set}
+      PMTILES_DIR: /data/pmtiles
+      UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:?UMAMI_ADMIN_USER must be set}
+      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:?UMAMI_ADMIN_PASSWORD must be set}
+      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
+    volumes:
+      - pipeline_work:/tmp/circuitscape
+      - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+      - ./test/data/test.pmtiles:/data/pmtiles/test.pmtiles:ro
+    working_dir: /app/api
+    command: >
+      celery -A celery_app worker
+      -B
+      --loglevel=info
+      --concurrency=${PIPELINE_MAX_WORKERS:?PIPELINE_MAX_WORKERS must be set}
+
+  frontend:
+    image: dispersion-prediction-app-frontend
+    build:
+      dockerfile: docker/Dockerfile.frontend
+      additional_contexts:
+        gsbio: ./frontend/gsbio-engine
+    network_mode: host
+    environment:
+      FRONTEND_PORT: ${FRONTEND_PORT:?FRONTEND_PORT must be set}
+      API_PORT: ${API_PORT:?API_PORT must be set}
+
+  umami:
+    image: docker.umami.is/umami-software/umami:postgresql-latest
+    network_mode: host
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DATABASE_USER:?DATABASE_USER must be set}:${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}@${DATABASE_HOST:?DATABASE_HOST must be set}:${DATABASE_PORT:?DATABASE_PORT must be set}/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
+      DISABLE_TELEMETRY: "1"
+      PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  pipeline_work:

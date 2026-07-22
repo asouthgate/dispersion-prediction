@@ -1,0 +1,60 @@
+#
+# Template configuration file for the Circuitscape algorithm.
+# Each occurrence of WORKINGDIR must be replaced with the
+# current working directory folder, which is performed by the
+# prepare_circuitscape_ini_file function in the server.R file.
+#
+
+[Options for advanced mode]
+ground_file_is_resistances = True
+remove_src_or_gnd = keepall
+#roost location:
+ground_file = WORKINGDIR/circuitscape/ground.asc 
+use_unit_currents = False
+#circles coming out from roost:
+source_file = WORKINGDIR/circuitscape/source.asc
+use_direct_grounds = False
+
+[Mask file]
+mask_file = None
+use_mask = False
+
+[Calculation options]
+low_memory_mode = False
+parallelize = False
+#solver = cg+amg
+solver = cholmod
+print_timings = False
+preemptive_memory_release = False
+print_rusages = False
+max_parallel = 0
+
+[Short circuit regions (aka polygons)]
+use_polygons = False
+
+
+[Output options]
+#options for output files
+set_null_currents_to_nodata = False
+set_focal_node_currents_to_zero = False
+set_null_voltages_to_nodata = False
+compress_grids = False
+write_cur_maps = 1
+write_volt_maps = 0
+output_file = WORKINGDIR/circuitscape/cs_out
+write_cum_cur_map_only = False
+log_transform_maps = False
+write_max_cur_maps = False
+
+[Connection scheme for raster habitat data]
+connect_using_avg_resistances = True
+connect_four_neighbors_only = False
+
+#Folder with resistance asciis : needs asc at the end, put in the first file name 
+[Habitat raster or graph]
+habitat_map_is_resistances = True
+habitat_file = WORKINGDIR/circuitscape/resistance.asc
+
+[Circuitscape mode]
+data_type = raster
+scenario = advanced

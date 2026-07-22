@@ -1,0 +1,4 @@
+[submodule "gsbio-engine"]
+	path = frontend/gsbio-engine
+	url = https://github.com/asouthgate/gsbio-engine
+	branch = develop
