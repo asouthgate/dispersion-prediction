@@ -11,38 +11,36 @@ development. Firstly, update the submodule:
 git submodule update --init --recursive
 ```
 
-Install and build the engine with:
+Build the engine, frontend, and required images with
 
 ```bash
-cd frontend/gsbio-engine && npm install && npm run build
+bash scripts/build.sh
 ```
 
-The compose stack contains a self-seeding database. However, the `pmtiles` file needs to be 
-available for serving map data. Ensure this available in `data/uk-global-base.pmtiles`. 
+The compose stack contains a self-seeding database. The `pmtiles` file needs to be 
+available for serving map data. You can obtain vector data covering the UK by using `planetiler`
+to fetch OpenStreetMap tiles.
+
+```
+docker run -e JAVA_TOOL_OPTIONS="-Xmx4g" -v "$(pwd)/data:/data"   ghcr.io/onthegomap/planetiler:latest   --download   --area=united-kingdom   --bounds=planet   --output=./data/uk-global-base.pmtiles
+```
+
+Ensure this available in `data/uk-global-base.pmtiles`. 
 
 Then:
 
 ```bash
 docker compose up
 ```
-Open `http://localhost:5180`.
+
+Open `http://localhost:5184`. A small region centered on `Chudleigh` will have pre-seeded test raster data.
 
 # Running tests
 
-For the front-end:
+For all unit tests run:
 
 ```bash
-# engine unit tests
-cd frontend/gsbio-engine && npx vitest run
-
-# frontend type-check + build
-cd frontend && npm run build
-```
-
-For the back-end:
-
-```bash
-pytest api/test/ -v
+bash scripts/run-unit-tests.sh
 ```
 
 For the integration/smoke tests:
@@ -53,17 +51,14 @@ bash scripts/run-docker-api-test.sh
 
 # Deployment
 
-To deploy as a standalone single-node app. All containers use `network_mode: host`,
-sharing the host's network stack — `localhost` works for inter-container communication.
-
 ## System components
 
 The `docker-compose.prod.yml` stack runs four containers:
 
-- **redis** (port 6379): Celery message broker and auth token store
-- **api** (port 8000): FastAPI backend, serves `/api/*` including PMTiles
+- **api**: FastAPI backend, serves `/api/*` including PMTiles
+- **redis**: Celery message broker and auth token store
 - **celery_worker**: async pipeline runner + beat (periodic cleanup)
-- **umami** (port 3000): self-hosted web analytics
+- **umami**: self-hosted web analytics
 
 You'll also need:
 
@@ -162,7 +157,14 @@ echo "vm.overcommit_memory = 1" | sudo tee -a /etc/sysctl.conf
 
 # Data
 
-The data is all open source. The shapefiles for buildings, rivers and roads are from Ordnance Survey:
+The data is all open source. 
+
+For vector data used to render the map, see
+
+* https://www.openstreetmap.org/
+* https://github.com/onthegomap/planetiler
+
+The shapefiles for buildings, rivers and roads are from Ordnance Survey:
 
 * https://www.ordnancesurvey.co.uk/business-government/products/open-map-rivers
 * https://www.ordnancesurvey.co.uk/business-government/products/open-map-roads
