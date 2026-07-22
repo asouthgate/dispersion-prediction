@@ -27,6 +27,12 @@ docker run -e JAVA_TOOL_OPTIONS="-Xmx4g" -v "$(pwd)/data:/data"   ghcr.io/ontheg
 
 Ensure this available in `data/uk-global-base.pmtiles`. 
 
+Next, copy the default example env variables:
+
+```
+cp .env.example .env
+```
+
 Then:
 
 ```bash
@@ -49,21 +55,37 @@ For the integration/smoke tests:
 bash scripts/run-docker-api-test.sh
 ```
 
-# Deployment
+# Architecture
 
-## System components
-
-The `docker-compose.prod.yml` stack runs four containers:
+The `docker-compose.yml` stack runs:
 
 - **api**: FastAPI backend, serves `/api/*` including PMTiles
+- **frontend**: nginx serving built files
 - **redis**: Celery message broker and auth token store
 - **celery_worker**: async pipeline runner + beat (periodic cleanup)
 - **umami**: self-hosted web analytics
+- **postgis**: for the development database serving geospatial data
+- **umami-db**: postgres instance dedicated to small umami data; separated to make life easier with prod dbs.
 
-You'll also need:
+In production, for `docker-compose.prod.yml`, PostGIS is ommitted, and assumed to be an external service.
+In principle, the frontend can be served directly by a webserver and api via reverse proxy. 
+Here, we use a frontend container and assume both frontend and backend are reverse proxied. 
+This makes testing slightly easier but is an overhead.
 
-- **Reverse proxy** (nginx) serves the built frontend statically and proxies `/api/` to `127.0.0.1:8000`.
-  Example config:
+# Deployment
+
+
+## Prerequisites
+
+- **PostgreSQL with PostGIS** (external, not in the prod compose)
+- **Docker & Docker Compose**
+- **nginx**
+- `postgis` package for `shp2pgsql` / `raster2pgsql` CLI tools, which are bundled with the `postgis` package: 
+
+```sudo apt install postgis```
+
+You'll need to proxy `/api/` to `127.0.0.1:8084` and either serve the frontend directly
+or proxy the to the frontend container. Example `nginx` config:
 
 ```nginx
 server {
@@ -92,67 +114,51 @@ Install and enable:
 
 ```bash
 sudo apt install nginx
-sudo nano /etc/nginx/sites-available/dispersion.conf   # paste config above
+sudo vim /etc/nginx/sites-available/dispersion.conf # paste config here
 sudo ln -s /etc/nginx/sites-available/dispersion.conf /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 sudo ufw allow 80/tcp
 ```
 
-## Prerequisites
+## Database setup
 
-- **PostgreSQL with PostGIS** (external, not in the prod compose)
-- **Docker & Docker Compose**
-- **nginx** (see above)
-- `postgis` package for `shp2pgsql` / `raster2pgsql` CLI tools: `sudo apt install postgis`
+Ensure the PMTiles map file is in `data/uk-global-base.pmtiles`. This will be served as user-facing map data.
 
-## Setup steps
+For the analytical pipeline, PostGIS is needed. Create the application user and database:
 
 ```bash
-# 1. Create the application user and database
-sudo -u postgres createuser -P bats   # enter password
-sudo -u postgres createdb -O bats os
+sudo -u postgres createuser -P user   # enter password
+sudo -u postgres createdb -O user dbname
+```
 
-# 2. Install PostGIS extensions
+Install PostGIS extensions
+
+```bash
 sudo -u postgres psql -d os -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 sudo -u postgres psql -d os -c "CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+```
 
-# 3. Place the PMTiles map file
-mkdir -p /opt/dispersion-app/data
-cp data/uk-global-base.pmtiles /opt/dispersion-app/data/
+Upload the required data. See `test/data/seed/seed-test-data.sh` for an example.
 
-# 4. Seed the database with GIS test data
-cd test/data
-SEED_DIR=$(pwd)/seed DATABASE_HOST=localhost bash seed/seed-test-data.sh
-cd ../..
+Create the Umami analytics database
 
-# 5. Create the Umami analytics database
+```bash
 sudo -u postgres psql -c "CREATE DATABASE umami OWNER bats;"
 sudo -u postgres psql -d umami -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 sudo -u postgres psql -d umami -c "GRANT ALL ON SCHEMA public TO bats;"
-
-# 6. Build the API image
-docker build -f docker/Dockerfile.backend -t dispersion-prediction-app-api:v1.0.0 .
-
-# 7. Build the frontend
-cd frontend && npm ci && npm run build && cd ..
-
-# 8. Configure environment
-cp .env.example .env
-# Edit .env — at minimum set CORS_ORIGINS to your domain/IP,
-# and change passwords and secrets from their defaults.
-
-# 9. Start the stack
-docker compose -f docker-compose.prod.yml up -d
 ```
 
-## Optional: Redis overcommit
-
-To suppress the Redis memory overcommit warning:
+Configure the .env file:
 
 ```bash
-sudo sysctl vm.overcommit_memory=1
-echo "vm.overcommit_memory = 1" | sudo tee -a /etc/sysctl.conf
+cp .env.example .env  # change the defaults
+```
+
+Start the stack:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 # Data
