@@ -106,7 +106,7 @@ read_gpkg_if_exists <- function(cat, working_dir) {
     return(sf_obj)
 }
 
-for (cat in c("Building", "Road", "River", "Lights", "LightString")) {
+for (cat in c("Building", "Road", "River", "Lights", "LightSequence")) {
     sf_obj <- read_gpkg_if_exists(cat, working_dir)
     if (is.null(sf_obj)) next
 
@@ -116,7 +116,7 @@ for (cat in c("Building", "Road", "River", "Lights", "LightString")) {
         extra_lamps <- data.frame(x = coords[, "X"], y = coords[, "Y"], z = z_vals)
         logger::log_info("Adding %d lights from GPKG", nrow(extra_lamps))
         lamps <- rbind(lamps, extra_lamps)
-    } else if (cat == "LightString") {
+    } else if (cat == "LightSequence") {
         extra_lamps <- list()
         for (fi in seq_len(nrow(sf_obj))) {
             feat <- sf_obj[fi, ]
@@ -140,7 +140,7 @@ for (cat in c("Building", "Road", "River", "Lights", "LightString")) {
         if (length(extra_lamps) > 0) {
             extra_df <- as.data.frame(do.call(rbind, extra_lamps))
             colnames(extra_df) <- c("x", "y", "z")
-            logger::log_info("Adding %d lights interpolated from LightString GPKG", nrow(extra_df))
+            logger::log_info("Adding %d lights interpolated from LightSequence GPKG", nrow(extra_df))
             lamps <- rbind(lamps, extra_df)
         }
     } else {

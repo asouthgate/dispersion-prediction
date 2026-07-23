@@ -291,7 +291,8 @@ def _run_r_pipeline(
         tif_path = layer["tif_path"]
         bounds = get_bounds_for_tif(tif_path)
         result_layers.append({
-            "id": layer["name"],
+            "id": layer["id"],
+            "name": layer["name"],
             "url": f"/api/rasters/{task.request.id}/{layer['id']}.png",
             "bounds": list(bounds),
         })

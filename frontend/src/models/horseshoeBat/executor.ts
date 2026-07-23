@@ -136,6 +136,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
 
         const layers: ResultLayerEntry[] = (job.layers ?? []).map((l) => ({
           id: l.id,
+          name: (l as { name?: string }).name ?? l.id,
           envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
         }));
 

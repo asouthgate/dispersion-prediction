@@ -55,17 +55,19 @@ const MAP_PALETTE: MapPalette = {
 
 const iconStyle = { width: 18, height: 18 };
 
-const TOOLS: Array<{ mode: DrawMode; label: string; icon: React.ReactNode; color: string }> = [
+type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string };
+
+const TOOLS: ToolDef[] = [
   { mode: 'select', label: 'Select', icon: <Move style={iconStyle} />, color: '#888' },
   { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def' },
   { mode: 'polygon', label: 'Building', icon: <Building04 style={iconStyle} />, color: '#a0522d' },
   { mode: 'linestring', label: 'Road', icon: <CarAuto style={iconStyle} />, color: '#888888' },
   { mode: 'linestring', label: 'River', icon: <WaterDrop style={iconStyle} />, color: '#3678b5' },
   { mode: 'point', label: 'Lights', icon: <Sun style={iconStyle} />, color: '#ffbd17' },
-  { mode: 'linestring', label: 'LightString', icon: '✦', color: '#ff9900' },
+  { mode: 'linestring', label: 'Light Sequence', icon: '✦', color: '#ff9900', category: 'LightSequence' },
 ];
 
-const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon as never }));
+const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon as never, category: t.category }));
 
 const Feature_OPACITY = 0.2;
 
@@ -75,15 +77,15 @@ const featureStyles: FeatureStyleConfig = {
       const base = { fillColor: t.color, fillOpacity: Feature_OPACITY, outlineColor: t.color, outlineWidth: 2 };
       switch (t.mode) {
         case 'point':
-          return { mode: t.mode, category: t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 7 } };
+          return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 7 } };
         case 'circle':
-          return { mode: t.mode, category: t.label, style: { ...base } };
+          return { mode: t.mode, category: t.category ?? t.label, style: { ...base } };
         case 'linestring':
-          return { mode: t.mode, category: t.label, style: { lineColor: t.color, lineWidth: 2 } };
+          return { mode: t.mode, category: t.category ?? t.label, style: { lineColor: t.color, lineWidth: 2 } };
         case 'polygon':
-          return { mode: t.mode, category: t.label, style: { ...base } };
+          return { mode: t.mode, category: t.category ?? t.label, style: { ...base } };
         default:
-          return { mode: t.mode, category: t.label, style: base };
+          return { mode: t.mode, category: t.category ?? t.label, style: base };
       }
     }),
   ],
@@ -227,6 +229,11 @@ export function MapView() {
           return { url, headers: token ? { Authorization: `Bearer ${token}` } : {} };
         }
         return { url };
+      },
+      defaultData: {
+        Building:      { height: 10 },
+        Lights:        { height: 10 },
+        LightSequence: { height: 10, spacing: 50 },
       },
     });
   }, []);

@@ -121,10 +121,10 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
           <div className="side-panel__logos-track">
             <img src="/logos/logo_cu.svg" alt="Cardiff University" className="side-panel__logo" />
             <img src="/logos/logo_hefcw_inv.png" alt="HEFCW" className="side-panel__logo" />
-            <img src="/logos/logo_su.svg" alt="University of Sussex" className="side-panel__logo" />
+            <img src="/logos/logo_su.png" alt="University of Sussex" className="side-panel__logo" />
             <img src="/logos/logo_cu.svg" alt="" className="side-panel__logo" aria-hidden="true" />
             <img src="/logos/logo_hefcw_inv.png" alt="" className="side-panel__logo" aria-hidden="true" />
-            <img src="/logos/logo_su.svg" alt="" className="side-panel__logo" aria-hidden="true" />
+            <img src="/logos/logo_su.png" alt="" className="side-panel__logo" aria-hidden="true" />
           </div>
         </div>
       </div>
