@@ -10,7 +10,7 @@ const categoryIconMap: Record<string, React.ReactNode> = {
   Road: <CarAuto style={categoryIconStyle} />,
   River: <WaterDrop style={categoryIconStyle} />,
   Lights: <Sun style={categoryIconStyle} />,
-  LightString: <Sun style={categoryIconStyle} />,
+  LightSequence: <Sun style={categoryIconStyle} />,
 };
 
 const kindIconFallback = {
@@ -60,8 +60,8 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
     updateFeature(feature.id, { data: { ...(feature.data ?? {}), [key]: val } });
   };
 
-  const showHeight = feature.category === 'Building' || feature.category === 'Lights' || feature.category === 'LightString';
-  const showSpacing = feature.category === 'LightString';
+  const showHeight = feature.category === 'Building' || feature.category === 'Lights' || feature.category === 'LightSequence';
+  const showSpacing = feature.category === 'LightSequence';
 
   return (
     <div
@@ -106,7 +106,7 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
               <span className="field-label">Spacing (m)</span>
               <input
                 type="number"
-                min={0}
+                min={1}
                 max={200}
                 step={1}
                 value={spacing ?? ""}
