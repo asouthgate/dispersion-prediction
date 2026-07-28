@@ -19,12 +19,12 @@ x-app-environment: &app-environment
   ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
 
 x-app-defaults: &app-defaults
-  image: dispersion-prediction-app-api:v1.0.0
+  image: dispersion-prediction-app-api
   restart: always
   network_mode: host
   volumes:
     - pipeline_work:/tmp/circuitscape
-    - /opt/dispersion-app/data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+    - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
   logging:
     driver: json-file
     options:
@@ -44,6 +44,35 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  postgis-umami:
+    image: postgres:16-alpine
+    restart: always
+    network_mode: host
+    command: postgres -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set}
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: umami
+    volumes:
+      - umamipgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set} -U umami -d umami"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
       start_period: 5s
     deploy:
       resources:
@@ -95,7 +124,7 @@ services:
           memory: 512M
 
   frontend:
-    image: dispersion-prediction-app-frontend:v1.0.0
+    image: dispersion-prediction-app-frontend
     restart: always
     network_mode: host
     environment:
@@ -111,8 +140,11 @@ services:
     image: docker.umami.is/umami-software/umami:postgresql-latest
     restart: always
     network_mode: host
+    depends_on:
+      postgis-umami:
+        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${DATABASE_USER:?DATABASE_USER must be set}:${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}@${DATABASE_HOST:?DATABASE_HOST must be set}:${DATABASE_PORT:?DATABASE_PORT must be set}/umami
+      DATABASE_URL: ${UMAMI_DATABASE_URL:?UMAMI_DATABASE_URL must be set}
       APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
       PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
@@ -137,3 +169,4 @@ services:
 volumes:
   redisdata:
   pipeline_work:
+  umamipgdata:

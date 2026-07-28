@@ -19,6 +19,35 @@ services:
       retries: 10
       start_period: 10s
 
+  postgis-umami:
+    image: postgres:16-alpine
+    restart: always
+    network_mode: host
+    command: postgres -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set}
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: umami
+    volumes:
+      - umamipgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set} -U umami -d umami"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
   redis:
     image: redis:7-alpine
     network_mode: host
@@ -120,7 +149,7 @@ services:
       postgis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${DATABASE_USER:?DATABASE_USER must be set}:${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}@${DATABASE_HOST:?DATABASE_HOST must be set}:${DATABASE_PORT:?DATABASE_PORT must be set}/umami
+      DATABASE_URL: ${UMAMI_DATABASE_URL:?UMAMI_DATABASE_URL must be set}
       APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
       PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
@@ -130,3 +159,4 @@ volumes:
   pgdata:
   redisdata:
   pipeline_work:
+  umamipgdata:
