@@ -1,7 +1,6 @@
 import { StrictMode, useState, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createSimulationEngine } from '@gsbio/engine';
-import { AppProvider } from '@gsbio/engine';
+import { createEngine, EngineProvider } from '@gsbio/engine';
 import { App } from './App';
 import { installHorseshoeBat } from './models/horseshoeBat';
 import type { PipelineStage } from './models/horseshoeBat';
@@ -23,7 +22,7 @@ export function AppRoot() {
   }, []);
 
   const [engine] = useState(() => {
-    const e = createSimulationEngine();
+    const e = createEngine();
     e.autoShowResults = true;
     installHorseshoeBat(e, () => stageRef.current);
     return e;
@@ -41,9 +40,9 @@ export function AppRoot() {
   if (!token) return null;
 
   return (
-    <AppProvider engine={engine}>
+    <EngineProvider engine={engine}>
       <App stage={stage} onStageChange={setStage} />
-    </AppProvider>
+    </EngineProvider>
   );
 }
 
