@@ -19,12 +19,12 @@ x-app-environment: &app-environment
   ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
 
 x-app-defaults: &app-defaults
-  image: dispersion-prediction-app-api:v1.0.0
+  image: dispersion-prediction-app-api
   restart: always
   network_mode: host
   volumes:
     - pipeline_work:/tmp/circuitscape
-    - /opt/dispersion-app/data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+    - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
   logging:
     driver: json-file
     options:
@@ -61,7 +61,7 @@ services:
     image: postgres:16-alpine
     restart: always
     network_mode: host
-    command: postgres -p 5433
+    command: postgres -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set}
     environment:
       POSTGRES_DB: umami
       POSTGRES_USER: umami
@@ -69,7 +69,7 @@ services:
     volumes:
       - umamipgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5433 -U umami -d umami"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set} -U umami -d umami"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -124,7 +124,7 @@ services:
           memory: 512M
 
   frontend:
-    image: dispersion-prediction-app-frontend:v1.0.0
+    image: dispersion-prediction-app-frontend
     restart: always
     network_mode: host
     environment:
