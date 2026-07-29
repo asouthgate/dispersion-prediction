@@ -30,10 +30,11 @@ const SECTIONS: SectionDef[] = [
 interface SidePanelProps {
   stage: PipelineStage;
   onStageChange: (s: PipelineStage) => void;
+  collapsed: boolean;
+  onToggleCollapsed: (c: boolean) => void;
 }
 
-export function SidePanel({ stage, onStageChange }: SidePanelProps) {
-  const [collapsed, setCollapsed] = useState(false);
+export function SidePanel({ stage, onStageChange, collapsed, onToggleCollapsed }: SidePanelProps) {
   const [openSections, setOpenSections] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     for (const s of SECTIONS) if (s.defaultOpen) initial.add(s.id);
@@ -76,13 +77,13 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
   if (collapsed) {
     return (
       <div className="side-panel side-panel--collapsed">
-        <button className="panel-expand-btn" onClick={() => setCollapsed(false)} title="Expand panel">◀</button>
+        <button className="panel-expand-btn" onClick={() => onToggleCollapsed(false)} title="Expand panel">◀</button>
         <nav className="panel-icon-rail">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               className={`panel-icon-btn ${openSections.has(s.id) ? 'active' : ''}`}
-              onClick={() => { setCollapsed(false); setOpenSections((prev) => new Set(prev).add(s.id)); }}
+              onClick={() => { onToggleCollapsed(false); setOpenSections((prev) => new Set(prev).add(s.id)); }}
               title={s.label}
             >
               <span className="panel-icon-content">{s.icon}</span>
@@ -96,7 +97,7 @@ export function SidePanel({ stage, onStageChange }: SidePanelProps) {
   return (
     <div className="side-panel">
       <div className="side-panel-top-row">
-        <button className="panel-collapse-btn" onClick={() => setCollapsed(true)} title="Collapse panel">▶</button>
+        <button className="panel-collapse-btn" onClick={() => onToggleCollapsed(true)} title="Collapse panel">▶</button>
       </div>
       <div className="side-panel-scroll">
         {SECTIONS.map((s) => {

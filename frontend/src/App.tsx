@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PipelineStage } from './models/horseshoeBat';
 import { MapView } from './components/MapView';
 import { SidePanel } from './components/SidePanel';
@@ -11,6 +11,17 @@ interface AppProps {
 
 export function App({ stage, onStageChange }: AppProps) {
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const update = () => {
+      if (mq.matches) setPanelCollapsed(true);
+    };
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   return (
     <div className="app-container">
@@ -24,7 +35,12 @@ export function App({ stage, onStageChange }: AppProps) {
           Privacy
         </button>
       </div>
-      <SidePanel stage={stage} onStageChange={onStageChange} />
+      <SidePanel
+        stage={stage}
+        onStageChange={onStageChange}
+        collapsed={panelCollapsed}
+        onToggleCollapsed={setPanelCollapsed}
+      />
       {privacyOpen && <PrivacyModal onClose={() => setPrivacyOpen(false)} />}
     </div>
   );
