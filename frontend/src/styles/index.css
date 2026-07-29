@@ -83,7 +83,7 @@ input, .run-item__name, .run-item__status,
   height: 100%;
 }
 
-/* =================== DRAW TOOLBAR =================== */
+/*  DRAW TOOLBAR  */
 
 .draw-toolbar {
   position: absolute;
@@ -160,7 +160,7 @@ input, .run-item__name, .run-item__status,
   margin: 0 4px;
 }
 
-/* =================== SIDE PANEL =================== */
+/*  SIDE PANEL  */
 
 .side-panel {
   width: var(--side-panel-width);
@@ -285,7 +285,7 @@ input, .run-item__name, .run-item__status,
   background: var(--accent-soft);
 }
 
-/* =================== COLLAPSIBLE SECTIONS =================== */
+/*  COLLAPSIBLE SECTIONS  */
 
 .panel-section-block {
   border-bottom: 1px solid var(--border);
@@ -358,7 +358,7 @@ input, .run-item__name, .run-item__status,
   gap: 12px;
 }
 
-/* =================== DATA SECTION =================== */
+/*  DATA SECTION  */
 
 .data-feature-list { display: flex; flex-direction: column; gap: 4px; }
 .data-feature-item {
@@ -421,7 +421,7 @@ input, .run-item__name, .run-item__status,
 .data-icon-btn:hover { color: var(--text-primary); }
 .data-icon-btn--danger:hover { color: var(--danger); }
 
-/* =================== FORM ELEMENTS =================== */
+/*  FORM ELEMENTS  */
 
 .panel-section { display: flex; flex-direction: column; gap: 12px; }
 .help-content { font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
@@ -464,7 +464,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 
 .hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
 
-/* =================== BUTTONS =================== */
+/*  BUTTONS  */
 
 .btn {
   display: block; width: 100%;
@@ -480,7 +480,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 .btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-light); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* =================== MAPLIBRE OVERRIDES =================== */
+/*  MAPLIBRE OVERRIDES  */
 
 .maplibregl-ctrl-attrib { font-size: 10px !important; }
 .maplibregl-ctrl-group {
@@ -500,7 +500,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   box-shadow: var(--shadow-float) !important;
 }
 
-/* =================== RUN PANEL + RESULTS =================== */
+/*  RUN PANEL + RESULTS  */
 
 .run-panel { display: flex; flex-direction: column; gap: 8px; }
 .btn-run-row { display: flex; gap: 6px; align-items: stretch; }
@@ -644,7 +644,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 .run-item__layer-label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .run-item__layer-id { font-family: var(--font-mono); }
 
-/* ---- Run log modal ---- */
+/* - Run log modal - */
 .run-log-modal__backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.65);
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
@@ -682,9 +682,9 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 .run-log-modal__level { text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; opacity: 0.9; }
 .run-log-modal__message { white-space: pre-wrap; word-break: break-word; }
 
-/* =================== CUSTOM BAT APP COMPONENTS =================== */
+/*  CUSTOM BAT APP COMPONENTS  */
 
-/* --- Warning banner --- */
+/*  Warning banner  */
 .warning-banner {
   color: var(--warning);
   font-size: 11px;
@@ -696,7 +696,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 }
 .warning-banner a { color: var(--warning); }
 
-/* --- Stage selector tabs --- */
+/*  Stage selector tabs  */
 .stage-tabs {
   display: flex;
   gap: 2px;
@@ -725,7 +725,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   color: var(--accent-hover);
 }
 
-/* --- Feature panel custom controls --- */
+/*  Feature panel custom controls  */
 .feature-panel {
   display: flex;
   flex-direction: column;
@@ -743,7 +743,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   gap: 2px;
 }
 
-/* --- CSV upload --- */
+/*  CSV upload  */
 .csv-upload {
   display: flex;
   flex-direction: column;
@@ -769,7 +769,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   background: var(--bg-hover);
 }
 
-/* --- Parameter sub-section nest --- */
+/*  Parameter sub-section nest  */
 .param-subsection {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -800,7 +800,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   gap: 8px;
 }
 
-/* --- Coord display --- */
+/*  Coord display  */
 .coord-display {
   background: var(--bg-dark);
   border: 1px solid var(--border);
@@ -812,7 +812,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   text-align: center;
 }
 
-/* --- Generate panel button row --- */
+/*  Generate panel button row  */
 .generate-actions {
   display: flex;
   flex-direction: column;
@@ -824,7 +824,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   margin: 4px 0;
 }
 
-/* ---- Privacy button & modal ---- */
+/* Privacy button & modal */
 .privacy-btn {
   position: absolute;
   bottom: 12px;
@@ -877,7 +877,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 .privacy-modal__body p { margin-bottom: 12px; }
 .privacy-modal__body p:last-child { margin-bottom: 0; }
 
-/* =================== SIDE PANEL LOGO SCROLLER =================== */
+/*  SIDE PANEL LOGO SCROLLER  */
 
 .side-panel__logos {
   padding: 14px 14px;
@@ -912,4 +912,116 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 @keyframes logoScroll {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
+}
+
+/*  RESPONSIVE (≤ 768px)  */
+
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+
+  .map-area {
+    flex: 1;
+    min-height: 280px;
+    width: 100%;
+  }
+
+  .side-panel {
+    width: 100%;
+    height: 45vh;
+    flex: none;
+    min-height: 0;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .side-panel--collapsed {
+    width: 100%;
+    height: 44px;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .side-panel--collapsed .panel-icon-rail {
+    flex-direction: row;
+    flex: 1;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .panel-collapse-btn {
+    transform: rotate(90deg);
+  }
+  .panel-expand-btn {
+    transform: rotate(90deg);
+  }
+
+  .draw-toolbar {
+    top: 8px;
+    gap: 1px;
+    padding: 3px 4px;
+  }
+
+  .draw-btn {
+    padding: 4px 6px;
+    min-width: 36px;
+  }
+
+  .draw-btn-label {
+    display: none;
+  }
+
+  .draw-toolbar-separator {
+    height: 22px;
+    margin: 0 2px;
+  }
+
+  .privacy-btn {
+    left: 8px;
+    padding: 4px 10px;
+    font-size: 10px;
+  }
+
+  .privacy-modal__backdrop,
+  .run-log-modal__backdrop {
+    padding: 12px;
+  }
+
+  .privacy-modal,
+  .run-log-modal {
+    width: 100%;
+    max-height: 75vh;
+  }
+
+  .run-log-modal__header,
+  .privacy-modal__header {
+    padding: 10px 12px;
+  }
+
+  .run-log-modal__body,
+  .privacy-modal__body {
+    padding: 12px;
+  }
+
+  .side-panel__logos {
+    padding: 8px 10px;
+  }
+
+  .side-panel__logo {
+    height: 36px;
+  }
+
+  .side-panel__logos-track {
+    gap: 16px;
+  }
+
+  .side-panel-top-row {
+    padding: 10px 12px;
+  }
+
+  .panel-section-body {
+    padding: 8px 12px 14px;
+  }
 }
