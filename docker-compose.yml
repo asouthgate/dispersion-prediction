@@ -1,10 +1,48 @@
+networks:
+  internal:
+    driver: bridge
+
+x-app-environment: &app-environment
+  CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+  DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
+  DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
+  DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
+  DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
+  DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
+  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
+  AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
+  PIPELINE_WORK_DIR: ${PIPELINE_WORK_DIR:-/tmp/circuitscape}
+  PIPELINE_WORK_DIR_TTL_HOURS: ${PIPELINE_WORK_DIR_TTL_HOURS:-24}
+  PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
+  PMTILES_DIR: ${PMTILES_DIR:-/data/pmtiles}
+  UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
+  UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+  UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
+  UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
+  ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
+
+x-app-defaults: &app-defaults
+  image: dispersion-prediction-app-api
+  restart: always
+  networks:
+    - internal
+  volumes:
+    - pipeline_work:${PIPELINE_WORK_DIR:-/tmp/circuitscape}
+    - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "3"
+
 services:
   postgis:
+    profiles: ["dev"]
     image: dispersion-prediction-app-postgis
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.gis
-    network_mode: host
+    restart: always
+    networks:
+      - internal
     environment:
       POSTGRES_DB: ${DATABASE_NAME:?DATABASE_NAME must be set}
       POSTGRES_USER: ${DATABASE_USER:?DATABASE_USER must be set}
@@ -18,12 +56,17 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
-  postgis-umami:
+  postgres-umami:
     image: postgres:16-alpine
     restart: always
-    network_mode: host
-    command: postgres -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set}
+    networks:
+      - internal
     environment:
       POSTGRES_DB: umami
       POSTGRES_USER: umami
@@ -31,7 +74,7 @@ services:
     volumes:
       - umamipgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p ${UMAMI_DB_PORT:?UMAMI_DB_PORT must be set} -U umami -d umami"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U umami -d umami"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,110 +93,124 @@ services:
 
   redis:
     image: redis:7-alpine
-    network_mode: host
+    restart: always
+    networks:
+      - internal
     command: redis-server --port ${REDIS_PORT:?REDIS_PORT must be set}
     volumes:
       - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:?REDIS_PORT must be set}", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
-      retries: 10
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   api:
-    image: dispersion-prediction-app-api
-    build:
-      dockerfile: docker/Dockerfile.backend
-    network_mode: host
+    <<: *app-defaults
+    ports:
+      - "${API_PORT:?API_PORT must be set}:${API_PORT:?API_PORT must be set}"
+    environment:
+      <<: *app-environment
+      API_PORT: ${API_PORT:?API_PORT must be set}
     depends_on:
-      postgis:
-        condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      API_PORT: ${API_PORT:?API_PORT must be set}
-      DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
-      DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
-      DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
-      DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
-      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
-      AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
-      PIPELINE_WORK_DIR: /tmp/circuitscape
-      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:?PIPELINE_TIMEOUT must be set}
-      PMTILES_DIR: /data/pmtiles
-      UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
-      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
-      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:?UMAMI_ADMIN_USER must be set}
-      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:?UMAMI_ADMIN_PASSWORD must be set}
-      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
-    volumes:
-      - pipeline_work:/tmp/circuitscape
-      - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
-      - ./test/data/test.pmtiles:/data/pmtiles/test.pmtiles:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${API_PORT:-8084}/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
   celery_worker:
-    image: dispersion-prediction-app-api
-    network_mode: host
+    <<: *app-defaults
+    environment:
+      <<: *app-environment
+      PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:-4}
+    working_dir: /app/api
+    command: celery -A celery_app worker -B --loglevel=info --concurrency=${PIPELINE_MAX_WORKERS:-4}
     depends_on:
-      postgis:
-        condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST must be set}
-      DATABASE_NAME: ${DATABASE_NAME:?DATABASE_NAME must be set}
-      DATABASE_PORT: ${DATABASE_PORT:?DATABASE_PORT must be set}
-      DATABASE_USER: ${DATABASE_USER:?DATABASE_USER must be set}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?CELERY_BROKER_URL must be set}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:?CELERY_RESULT_BACKEND must be set}
-      AUTH_REDIS_URL: ${AUTH_REDIS_URL:?AUTH_REDIS_URL must be set}
-      PIPELINE_WORK_DIR: /tmp/circuitscape
-      PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:?PIPELINE_TIMEOUT must be set}
-      PIPELINE_MAX_WORKERS: ${PIPELINE_MAX_WORKERS:?PIPELINE_MAX_WORKERS must be set}
-      PMTILES_DIR: /data/pmtiles
-      UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
-      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
-      UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:?UMAMI_ADMIN_USER must be set}
-      UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:?UMAMI_ADMIN_PASSWORD must be set}
-      ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
-    volumes:
-      - pipeline_work:/tmp/circuitscape
-      - ./data/uk-global-base.pmtiles:/data/pmtiles/uk.pmtiles:ro
-      - ./test/data/test.pmtiles:/data/pmtiles/test.pmtiles:ro
-    working_dir: /app/api
-    command: >
-      celery -A celery_app worker
-      -B
-      --loglevel=info
-      --concurrency=${PIPELINE_MAX_WORKERS:?PIPELINE_MAX_WORKERS must be set}
+    healthcheck:
+      test: ["CMD", "celery", "-A", "celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M
 
   frontend:
     image: dispersion-prediction-app-frontend
-    build:
-      dockerfile: docker/Dockerfile.frontend
-      additional_contexts:
-        gsbio: ./frontend/gsbio-engine
-    network_mode: host
+    restart: always
+    networks:
+      - internal
+    ports:
+      - "${FRONTEND_PORT:?FRONTEND_PORT must be set}:${FRONTEND_PORT:?FRONTEND_PORT must be set}"
     environment:
       FRONTEND_PORT: ${FRONTEND_PORT:?FRONTEND_PORT must be set}
       API_PORT: ${API_PORT:?API_PORT must be set}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   umami:
     image: docker.umami.is/umami-software/umami:postgresql-latest
-    network_mode: host
+    restart: always
+    networks:
+      - internal
+    ports:
+      - "${UMAMI_PORT:?UMAMI_PORT must be set}:${UMAMI_PORT:?UMAMI_PORT must be set}"
     depends_on:
-      postgis:
+      postgres-umami:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${UMAMI_DATABASE_URL:?UMAMI_DATABASE_URL must be set}
+      DATABASE_URL: postgresql://umami:umami@postgres-umami:5432/umami
       APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
       PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${UMAMI_PORT:-3084}/api/heartbeat || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
 volumes:
   pgdata:

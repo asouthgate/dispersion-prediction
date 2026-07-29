@@ -7,7 +7,7 @@ mkdir -p tmp/script-output/
 echo "Building api image"
 docker build -t dispersion-prediction-app-api -f docker/Dockerfile.backend .
 
-docker compose up -d
+docker compose --profile dev up -d
 sleep 10
 
 echo "Running resistance pipeline"
