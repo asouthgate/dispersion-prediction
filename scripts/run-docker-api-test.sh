@@ -13,7 +13,7 @@ fi
 
 echo "Starting stack"
 docker compose down -v
-docker compose up -d
+docker compose --profile dev up -d
 
 echo "Waiting for API ($API_URL)"
 for i in $(seq 1 30); do
@@ -32,6 +32,7 @@ echo "Running current (circuitscape) pipeline"
 python3 test/run_pipeline.py --api-base "$API_URL" --stage current --out "$OUTPUT_DIR/current/"
 
 echo "Testing PMTiles endpoint"
+docker compose cp ./test/data/test.pmtiles api:/data/pmtiles/test.pmtiles
 python3 test/test_pmtiles.py --api-base "$API_URL" --frontend-base "http://localhost:${FRONTEND_PORT:-5184}" --pmtiles-file test.pmtiles
 
 echo "Running full-stack integration test"

@@ -36,7 +36,7 @@ cp .env.example .env
 Then:
 
 ```bash
-docker compose up
+docker compose --profile dev up
 ```
 
 Open `http://localhost:5184`. A small region centered on `Chudleigh` will have pre-seeded test raster data.
@@ -65,9 +65,10 @@ The `docker-compose.yml` stack runs:
 - **celery_worker**: async pipeline runner + beat (periodic cleanup)
 - **umami**: self-hosted web analytics
 - **postgis**: for the development database serving geospatial data
-- **umami-db**: postgres instance dedicated to small umami data; separated to make life easier with prod dbs.
+- **postgres-umami**: dedicated postgres instance for umami analytics data
 
-In production, for `docker-compose.prod.yml`, PostGIS is ommitted, and assumed to be an external service.
+In production, omit the `--profile dev` flag to skip the bundled `postgis` container.
+An external PostGIS database is assumed.
 In principle, the frontend can be served directly by a webserver and api via reverse proxy. 
 Here, we use a frontend container and assume both frontend and backend are reverse proxied. 
 This makes testing slightly easier but is an overhead.
@@ -158,7 +159,7 @@ cp .env.example .env  # change the defaults
 Start the stack:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 # Data
