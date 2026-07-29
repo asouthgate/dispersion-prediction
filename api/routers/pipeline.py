@@ -118,7 +118,7 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
 
 
 @router.get("/{job_id}", response_model=JobStatus)
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str, token: str = Depends(require_auth)):
     result = AsyncResult(job_id, app=celery_app)
     state = result.state
     client_status = _STATE_MAP.get(state, "pending")
