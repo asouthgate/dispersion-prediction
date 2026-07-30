@@ -30,7 +30,19 @@ async def create_token(request: Request):
     """Generate a new session token stored in Redis with a TTL."""
     ip = _client_ip(request)
     rate_key = f"auth:rate:{ip}"
+    cooldown_key = f"auth:cooldown:{ip}"
     redis = get_redis()
+
+    try:
+        if await redis.exists(cooldown_key):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Please wait before requesting another token.",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to check token cooldown: %s", e)
 
     try:
         count = await redis.incr(rate_key)
@@ -53,6 +65,7 @@ async def create_token(request: Request):
 
     try:
         await redis.set(key, str(created_at), ex=TOKEN_TTL_SECONDS)
+        await redis.set(cooldown_key, "1", ex=5)
     except Exception as e:
         logger.error("Failed to store auth token in Redis: %s", e)
         raise HTTPException(

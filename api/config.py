@@ -25,6 +25,11 @@ if not CELERY_RESULT_BACKEND:
 
 RATE_LIMIT_TOKENS_PER_MINUTE = int(os.environ.get("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
 
+# Global cap on in-flight pipeline jobs (running + queued). New submissions
+# get HTTP 429 once this many jobs are in flight. Size it around
+# PIPELINE_MAX_WORKERS * 2 so the broker queue stays short.
+MAX_INFLIGHT_JOBS = int(os.environ.get("MAX_INFLIGHT_JOBS", "8"))
+
 ANALYTICS_HASH_SECRET = os.environ.get("ANALYTICS_HASH_SECRET")
 if not ANALYTICS_HASH_SECRET:
     raise RuntimeError("ANALYTICS_HASH_SECRET must be set in the environment")

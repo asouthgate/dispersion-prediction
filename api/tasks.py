@@ -13,11 +13,12 @@ import subprocess
 import time
 from typing import Any
 
+import redis as _sync_redis
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from pyproj import Transformer
 
-from config import PIPELINE_TIMEOUT
+from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL
 from services.r_bridge import wgs84_to_bng
 from services.raster_service import tif_to_png
 from services.analytics import emit_pipeline_complete
@@ -155,11 +156,14 @@ def _sanitize_error(message: str) -> str:
         return "The server is unable to access required data files."
     if "database" in lower or "postgres" in lower:
         return "Unable to connect to the spatial database. Please try again later."
+    if "failed to fetch" in lower and "raster" in lower:
+        return "Unable to retrieve spatial data for the selected area. Try a different location."
     known_safe = (
         "no roost defined",
         "unknown pipeline stage",
         "the pipeline took too long",
         "no data is available",
+        "no data is available for the selected area",
     )
     lower_clean = lower.strip()
     if any(lower_clean.startswith(p) for p in known_safe):
@@ -302,6 +306,27 @@ def _run_r_pipeline(
     return result_layers, warnings
 
 
+def _cleanup_token_job(task_id: str, success: bool) -> None:
+    """Clear per-token job keys and the in-flight marker for a finished task.
+
+    On failure the dedup key is also cleared so a retry of the same payload
+    starts a fresh job instead of being handed back the failed one.
+    """
+    try:
+        r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
+        token = r.get(f"job:token:{task_id}")
+        if token:
+            r.delete(f"job:by_token:{token}", f"job:token:{task_id}")
+        r.srem("jobs:inflight", task_id)
+        if not success:
+            h = r.get(f"task_to_hash:{task_id}")
+            if h:
+                r.delete(f"dedup:{h}", f"task_to_hash:{task_id}")
+        r.close()
+    except Exception:
+        pass
+
+
 @shared_task(bind=True, name="tasks.run_pipeline")
 def run_pipeline_task(
     self,
@@ -322,50 +347,53 @@ def run_pipeline_task(
     def _progress(label: str) -> None:
         self.update_state(state="PROGRESS", meta={"label": label})
 
+    success = False
     try:
-        _progress(f"Running {stage} pipeline...")
+        try:
+            _progress(f"Running {stage} pipeline...")
 
-        if stage == "coverage":
-            if not roost:
-                raise ValueError("No roost defined: place a roost on the map before running coverage.")
-            _progress("Fetching coverage data...")
-            layers, warnings = _run_coverage(self, work_dir, roost, features, params)
-        elif stage == "resistance":
-            if not roost:
-                raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
-            _progress("Computing resistance maps...")
-            layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
-        elif stage == "current":
-            if not roost:
-                raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
-            asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
-            if not os.path.exists(asc_path):
+            if stage == "coverage":
+                if not roost:
+                    raise ValueError("No roost defined: place a roost on the map before running coverage.")
+                _progress("Fetching coverage data...")
+                layers, warnings = _run_coverage(self, work_dir, roost, features, params)
+            elif stage == "resistance":
+                if not roost:
+                    raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
                 _progress("Computing resistance maps...")
-                logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
-                _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
-            _progress("Running Circuitscape current map...")
-            layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
-        else:
-            raise ValueError(f"Unknown pipeline stage: {stage}")
+                layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
+            elif stage == "current":
+                if not roost:
+                    raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
+                asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
+                if not os.path.exists(asc_path):
+                    _progress("Computing resistance maps...")
+                    logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
+                    _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
+                _progress("Running Circuitscape current map...")
+                layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
+            else:
+                raise ValueError(f"Unknown pipeline stage: {stage}")
 
-        elapsed = time.monotonic() - t0
-        logger.info("Job %s: completed in %.1fs, %d layers, %d warnings",
-                    self.request.id, elapsed, len(layers), len(warnings))
-        emit_pipeline_complete(stage, elapsed, True)
-        return {"layers": layers, "warnings": warnings}
+            elapsed = time.monotonic() - t0
+            logger.info("Job %s: completed in %.1fs, %d layers, %d warnings",
+                        self.request.id, elapsed, len(layers), len(warnings))
+            emit_pipeline_complete(stage, elapsed, True)
+            success = True
+            return {"layers": layers, "warnings": warnings}
 
-    except SoftTimeLimitExceeded:
-        emit_pipeline_complete(stage, time.monotonic() - t0, False)
-        raise RuntimeError(
-            "The pipeline took too long to complete. Try a smaller study area or a higher resolution value."
-        )
-    except Exception as e:
-        emit_pipeline_complete(stage, time.monotonic() - t0, False)
-        friendly = _sanitize_error(str(e))
-        logger.error("Job %s failed: %s", self.request.id, friendly)
-        # Celery surfaces the exception's args as result on FAILURE; raise a
-        # RuntimeError with the friendly message so it round-trips cleanly.
-        raise RuntimeError(friendly) from e
+        except SoftTimeLimitExceeded:
+            emit_pipeline_complete(stage, time.monotonic() - t0, False)
+            raise RuntimeError(
+                "The pipeline took too long to complete. Try a smaller study area or a higher resolution value."
+            )
+        except Exception as e:
+            emit_pipeline_complete(stage, time.monotonic() - t0, False)
+            friendly = _sanitize_error(str(e))
+            logger.error("Job %s failed: %s", self.request.id, friendly)
+            raise RuntimeError(friendly) from e
+    finally:
+        _cleanup_token_job(self.request.id, success)
 
 
 @shared_task(name="tasks.cleanup_work_dirs")
@@ -389,3 +417,47 @@ def cleanup_work_dirs() -> None:
         if mtime < cutoff:
             logger.info("cleanup_work_dirs: removing %s (age %.1fh)", name, (time.time() - mtime) / 3600)
             _shutil.rmtree(path, ignore_errors=True)
+
+
+@shared_task(name="tasks.prune_umami_events")
+def prune_umami_events() -> None:
+    """Daily (celery-beat): delete Umami analytics rows older than
+    UMAMI_RETENTION_DAYS. Umami has no built-in retention, so without this
+    its postgres volume grows forever.
+
+    Only runs when UMAMI_DATABASE_URL is set. Targets the Umami v2 schema
+    (event_data -> event -> session, children first). A schema mismatch just
+    logs a warning and tries again tomorrow.
+    """
+    db_url = os.environ.get("UMAMI_DATABASE_URL", "")
+    if not db_url:
+        return
+    days = int(os.environ.get("UMAMI_RETENTION_DAYS", "180"))
+
+    import psycopg2
+
+    try:
+        conn = psycopg2.connect(db_url)
+    except Exception as e:
+        logger.warning("prune_umami_events: cannot connect to Umami DB: %s", e)
+        return
+
+    try:
+        with conn.cursor() as cur:
+            deleted = {}
+            for table in ("event_data", "event", "session"):
+                cur.execute(
+                    f"DELETE FROM {table} WHERE created_at < now() - make_interval(days => %s)",
+                    (days,),
+                )
+                deleted[table] = cur.rowcount
+        conn.commit()
+        logger.info(
+            "prune_umami_events: deleted %s rows older than %d days",
+            deleted, days,
+        )
+    except Exception as e:
+        conn.rollback()
+        logger.warning("prune_umami_events failed: %s", e)
+    finally:
+        conn.close()
