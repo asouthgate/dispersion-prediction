@@ -14,6 +14,7 @@ import sys
 import urllib.request
 import urllib.error
 import json
+import time
 
 DEFAULT_API = "http://localhost:8084"
 DEFAULT_FRONTEND = "http://localhost:5184"
@@ -21,6 +22,7 @@ DEFAULT_PMTILES_FILE = "test.pmtiles"
 
 
 def get_token(base: str) -> str:
+    time.sleep(6) # required for rate limiting
     req = urllib.request.Request(
         f"{base}/api/auth/token",
         data=b"",

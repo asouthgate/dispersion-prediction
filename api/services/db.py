@@ -192,16 +192,20 @@ def fetch_rasters(extent: tuple[float, float, float, float], resolution: float, 
 
             except Exception as e:
                 conn.rollback()
-                raise RuntimeError(f"Failed to fetch raster {key} from table {table}: {e}") from e
+                logger.error("Failed to fetch raster %s from table %s: %s", key, table, e)
+                raise RuntimeError(f"Failed to fetch {key} raster data: database error") from e
 
     finally:
         conn.close()
 
     if not rasters:
+        logger.error(
+            "Coverage query produced zero result layers. Tables checked: %s.",
+            [t[0] for t in tables],
+        )
         raise RuntimeError(
-            f"Coverage query produced zero result layers. "
-            f"Tables checked: {[t[0] for t in tables]}. "
-            "Verify the database has raster data covering the roost location."
+            "No data is available for the selected area. The database may not have "
+            "raster data covering this location."
         )
 
     return rasters

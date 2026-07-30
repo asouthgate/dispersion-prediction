@@ -25,6 +25,10 @@ _init_started = False
 
 _max_workers = int(os.environ.get("ANALYTICS_MAX_WORKERS", "4"))
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=_max_workers, thread_name_prefix="analytics")
+# Bound the pending-send backlog: if Umami is slow/unreachable, excess events
+# are dropped rather than piling up unboundedly in memory. Analytics must
+# never affect the app.
+_send_slots = threading.BoundedSemaphore(_max_workers * 8)
 
 
 def daily_token_hash(token: str) -> str:
@@ -89,8 +93,8 @@ def _ensure_website() -> None:
             _init_done = True
             return
 
-        admin_user = os.environ.get("UMAMI_ADMIN_USER", "admin")
-        admin_pass = os.environ.get("UMAMI_ADMIN_PASSWORD", "umami")
+        admin_user = os.environ["UMAMI_ADMIN_USER"]
+        admin_pass = os.environ["UMAMI_ADMIN_PASSWORD"]
 
         login = None
         for attempt in range(30):
@@ -168,7 +172,11 @@ def _fire(payload: dict) -> None:
     if not _init_done or not _website_id or not _UMAMI_URL:
         return
     data = json.dumps(payload, default=str).encode("utf-8")
-    _executor.submit(_post_umami, data)
+    if not _send_slots.acquire(blocking=False):
+        logger.debug("Analytics send queue full, dropping event")
+        return
+    future = _executor.submit(_post_umami, data)
+    future.add_done_callback(lambda _f: _send_slots.release())
 
 
 def _emit_event(name: str, event_data: dict | None = None, user_id: str | None = None) -> None:

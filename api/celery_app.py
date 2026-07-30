@@ -17,6 +17,10 @@ celery_app = Celery(
 celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
+    # If a worker dies mid-task (e.g. OOM-killed), fail the task instead of
+    # requeueing it. A task that reliably kills the worker would otherwise
+    # loop forever on every `restart: always` cycle.
+    task_reject_on_worker_lost=True,
     worker_cancel_long_running_tasks_on_connection_loss=True,
     task_time_limit=PIPELINE_TIMEOUT,
     task_soft_time_limit=PIPELINE_TIMEOUT - 300,
@@ -26,6 +30,10 @@ celery_app.conf.update(
         "cleanup-work-dirs": {
             "task": "tasks.cleanup_work_dirs",
             "schedule": crontab(minute=0),
+        },
+        "prune-umami-events": {
+            "task": "tasks.prune_umami_events",
+            "schedule": crontab(hour=3, minute=15),
         },
     },
 )

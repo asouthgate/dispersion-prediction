@@ -16,10 +16,19 @@ x-app-environment: &app-environment
   PIPELINE_WORK_DIR_TTL_HOURS: ${PIPELINE_WORK_DIR_TTL_HOURS:-24}
   PIPELINE_TIMEOUT: ${PIPELINE_TIMEOUT:-1800}
   PMTILES_DIR: ${PMTILES_DIR:-/data/pmtiles}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  MAX_PIXEL_DIMENSION: ${MAX_PIXEL_DIMENSION:?MAX_PIXEL_DIMENSION must be set}
+  AUTH_TOKEN_TTL_SECONDS: ${AUTH_TOKEN_TTL_SECONDS:?AUTH_TOKEN_TTL_SECTIONS must be set}
+  AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:?AUTH_RATE_LIMIT_PER_MINUTE must be set}
+  ANALYTICS_RATE_LIMIT_PER_MINUTE: ${ANALYTICS_RATE_LIMIT_PER_MINUTE:?ANALYTICS_RATE_LIMIT_PER_MINUTE must be set}
+  JOB_CACHE_TTL_SECONDS: ${JOB_CACHE_TTL_SECONDS:?JOB_CACHE_TTL_SECONDS must be set}
   UMAMI_URL: ${UMAMI_URL:?UMAMI_URL must be set}
   UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
-  UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:-admin}
-  UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:-umami}
+  UMAMI_ADMIN_USER: ${UMAMI_ADMIN_USER:?UMAMI_ADMIN_USER must be set}
+  UMAMI_ADMIN_PASSWORD: ${UMAMI_ADMIN_PASSWORD:?UMAMI_ADMIN_PASSWORD must be set}
+  UMAMI_DATABASE_URL: ${UMAMI_DATABASE_URL:-}
+  UMAMI_RETENTION_DAYS: ${UMAMI_RETENTION_DAYS:-180}
+  MAX_INFLIGHT_JOBS: ${MAX_INFLIGHT_JOBS:-8}
   ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:?ANALYTICS_HASH_SECRET must be set}
 
 x-app-defaults: &app-defaults
@@ -96,11 +105,14 @@ services:
     restart: always
     networks:
       - internal
-    command: redis-server --port ${REDIS_PORT:?REDIS_PORT must be set}
+    # --maxmemory must stay below the 256MB container limit. volatile-lru only
+    # evicts keys that have a TTL (auth tokens, dedup keys, Celery results);
+    # broker queue entries have no TTL and are never evicted.
+    command: redis-server --port ${REDIS_PORT:?REDIS_PORT must be set} --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --maxmemory 200mb --maxmemory-policy volatile-lru
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:?REDIS_PORT must be set}", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:?REDIS_PORT must be set}", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3

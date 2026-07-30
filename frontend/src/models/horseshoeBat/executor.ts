@@ -101,8 +101,12 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
       const { job_id } = (await startRes.json()) as { job_id: string };
       ctx.onLog?.('info', `Job ${job_id} started`);
 
+      // Poll fast for 2 minutes, then back off to 5s. 60×2s + 360×5s ≈ 32min,
+      // covering the server's 30min PIPELINE_TIMEOUT so long jobs aren't
+      // reported as timed-out while still running.
       const POLL_INTERVAL_MS = 2000;
-      const MAX_POLLS = 300;
+      const SLOW_POLL_AFTER = 60;
+      const MAX_POLLS = 420;
 
       const onAbort = () => {
         fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { method: 'DELETE' }).catch(() => {});
@@ -113,7 +117,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         let job: JobStatus = { job_id, status: 'pending', progress: 0, progress_label: '', error: null, warnings: [] };
         for (let poll = 0; poll < MAX_POLLS; poll++) {
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          await delay(POLL_INTERVAL_MS, signal);
+          await delay(poll < SLOW_POLL_AFTER ? POLL_INTERVAL_MS : 5000, signal);
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           const res = await fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { signal });
           if (!res.ok) throw new Error(`Poll failed: ${res.status}`);

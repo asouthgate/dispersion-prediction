@@ -8,7 +8,7 @@ rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 if [ "${SKIP_BUILD:-}" != "true" ]; then
-    bash scripts/build-images.sh
+    bash scripts/build.sh
 fi
 
 echo "Starting stack"
