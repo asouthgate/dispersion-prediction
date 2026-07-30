@@ -30,8 +30,8 @@
   --shadow-float: 0 0 0 1px var(--border-light);
   --inset-input: none;
   --transition: 0.16s ease;
-  --font: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, 'JetBrains Mono', monospace;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, 'JetBrains Mono', monospace;
+  --font: ui-monospace, 'SFMono-Regular', Menlo, 'JetBrains Mono', monospace;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, 'JetBrains Mono', monospace;
   --side-panel-width: 340px;
   --side-panel-collapsed: 44px;
 }

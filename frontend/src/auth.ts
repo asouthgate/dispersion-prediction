@@ -13,6 +13,9 @@ const EXPIRY_KEY = 'session_token_expires_at';
 const SAFETY_MARGIN_MS = 60_000;
 
 let mintingPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<string | null> | null = null;
+let lastRefreshAttempt = 0;
+const REFRESH_COOLDOWN_MS = 6_000;
 
 export function getStoredToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY);
@@ -57,13 +60,23 @@ export async function mintToken(): Promise<string | null> {
   return mintingPromise;
 }
 
+export async function refreshToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  const now = Date.now();
+  if (now - lastRefreshAttempt < REFRESH_COOLDOWN_MS) {
+    return getTokenSync();
+  }
+  lastRefreshAttempt = now;
+  refreshPromise = mintToken().finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
 /**
  * Returns a valid token. When `force`, clears any cached token first
  * (used after a 401 to guarantee a fresh mint). Otherwise returns the
  * stored token if still valid, else mints a new one.
  */
 export async function ensureValidToken(force = false): Promise<string | null> {
-  if (force) clearToken();
   if (!force) {
     const sync = getTokenSync();
     if (sync) return sync;

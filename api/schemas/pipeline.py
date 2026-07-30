@@ -1,17 +1,6 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from typing import Any
-
-ALLOWED_PARAMS: set[str] = {
-    "resolution", "n_circles",
-    "road_resistance", "river_resistance", "landscape_resistance",
-    "linear_resistance", "lamp_resistance",
-    "road_weight", "river_weight", "landscape_weight",
-    "linear_weight", "lamp_weight",
-    "dtm_weight", "dsm_weight", "lcm_weight",
-    "road_buffer", "river_buffer", "landscape_buffer",
-    "linear_buffer", "lamp_buffer",
-}
 
 
 class RoostInput(BaseModel):
@@ -40,17 +29,6 @@ class PipelineRequest(BaseModel):
     roost: RoostInput
     features: list[FeaturePayload] = Field(default_factory=list)
     params: dict[str, int | float] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _validate_params(self) -> "PipelineRequest":
-        unknown = set(self.params) - ALLOWED_PARAMS
-        if unknown:
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown pipeline parameters: {', '.join(sorted(unknown))}",
-            )
-        return self
 
 
 class PipelineStartResponse(BaseModel):

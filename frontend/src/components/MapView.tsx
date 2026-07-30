@@ -23,7 +23,7 @@ import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
 import { Sun } from 'react-coolicons';
 import { Move } from 'react-coolicons';
-import { getTokenSync, ensureValidToken, getStoredToken } from '../auth';
+import { getTokenSync, getStoredToken, refreshToken } from '../auth';
 
 const CENTER: [number, number] = [-3.590523, 50.586362];
 const ZOOM = 13;
@@ -221,7 +221,7 @@ export function MapView() {
       featureStyles,
       resultStyles,
       getToken: getTokenSync,
-      refreshToken: () => ensureValidToken(true),
+      refreshToken,
       transformRequest: (url) => {
         const pathname = url.startsWith('http') ? new URL(url).pathname : url.split('?')[0];
         if (pathname.startsWith('/api/')) {
