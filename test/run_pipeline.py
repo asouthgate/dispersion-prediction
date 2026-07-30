@@ -28,6 +28,7 @@ def get_token(base: str) -> str:
     global _session_token
     if _session_token:
         return _session_token
+    time.sleep(6) # required for rate limiting
     req = urllib.request.Request(
         f"{base}/api/auth/token",
         data=b"",
@@ -100,7 +101,11 @@ def api_get(url: str) -> dict[str, Any]:
 
 
 def api_get_bytes(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=60) as resp:
+    headers = {}
+    if _session_token:
+        headers["Authorization"] = f"Bearer {_session_token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.read()
 
 

@@ -18,7 +18,7 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     # If a worker dies mid-task (e.g. OOM-killed), fail the task instead of
-    # requeueing it — a task that reliably kills the worker would otherwise
+    # requeueing it. A task that reliably kills the worker would otherwise
     # loop forever on every `restart: always` cycle.
     task_reject_on_worker_lost=True,
     worker_cancel_long_running_tasks_on_connection_loss=True,

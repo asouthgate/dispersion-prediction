@@ -24,6 +24,19 @@ if not CELERY_RESULT_BACKEND:
     raise RuntimeError("CELERY_RESULT_BACKEND must be set in the environment")
 
 RATE_LIMIT_TOKENS_PER_MINUTE = int(os.environ.get("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
+ANALYTICS_RATE_LIMIT_PER_MINUTE = int(os.environ.get("ANALYTICS_RATE_LIMIT_PER_MINUTE", "30"))
+
+# Lifetime of the dedup fingerprint AND the task_to_hash / job:owner /
+# job:viewers lookups. These must share one value: the dedup fingerprint has
+# to live at least as long as results are servable, otherwise an identical
+# resubmission recycles the hash-named work dir while earlier tasks still
+# reference it (see routers/pipeline.py).
+JOB_CACHE_TTL_SECONDS = int(os.environ.get("JOB_CACHE_TTL_SECONDS", "86400"))
+
+# Derived, not independently tunable: how long a token is locked to one
+# in-flight job. Twice the hard pipeline timeout so the lock always outlives
+# the task it guards.
+JOB_TOKEN_TTL_SECONDS = PIPELINE_TIMEOUT * 2
 
 # Global cap on in-flight pipeline jobs (running + queued). New submissions
 # get HTTP 429 once this many jobs are in flight. Size it around

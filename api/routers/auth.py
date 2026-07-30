@@ -9,6 +9,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from middleware.auth import require_auth
+from middleware.rate_limit import arm_cooldown, rate_limit, require_cooldown
 from services.redis import get_redis
 from config import TOKEN_TTL_SECONDS, RATE_LIMIT_TOKENS_PER_MINUTE
 
@@ -16,62 +17,38 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    client = request.client
-    return client.host if client else "unknown"
+# Per-IP guards on token minting: a 5s cooldown after each successful mint,
+# plus a hard cap per minute. Both are best-effort (fail-open) — see
+# middleware/rate_limit.py.
+TOKEN_COOLDOWN_SECONDS = 5
 
 
-@router.post("/token")
+@router.post(
+    "/token",
+    dependencies=[
+        Depends(require_cooldown("auth_token", TOKEN_COOLDOWN_SECONDS)),
+        Depends(rate_limit("auth_token", RATE_LIMIT_TOKENS_PER_MINUTE)),
+    ],
+)
 async def create_token(request: Request):
     """Generate a new session token stored in Redis with a TTL."""
-    ip = _client_ip(request)
-    rate_key = f"auth:rate:{ip}"
-    cooldown_key = f"auth:cooldown:{ip}"
-    redis = get_redis()
-
-    try:
-        if await redis.exists(cooldown_key):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Please wait before requesting another token.",
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to check token cooldown: %s", e)
-
-    try:
-        count = await redis.incr(rate_key)
-        if count == 1:
-            await redis.expire(rate_key, 60)
-        if count > RATE_LIMIT_TOKENS_PER_MINUTE:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many requests. Please wait a minute.",
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to check rate limit: %s", e)
-
     token = uuid.uuid4().hex
     key = f"auth:token:{token}"
     created_at = time.time()
     expires_at = created_at + TOKEN_TTL_SECONDS
 
+    redis = get_redis()
     try:
         await redis.set(key, str(created_at), ex=TOKEN_TTL_SECONDS)
-        await redis.set(cooldown_key, "1", ex=5)
     except Exception as e:
         logger.error("Failed to store auth token in Redis: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to create session",
         )
+
+    # Only armed on success: rejected requests must not start the cooldown.
+    await arm_cooldown(request, "auth_token", TOKEN_COOLDOWN_SECONDS)
 
     logger.info("New session token created")
     return {"token": token, "expires_at": expires_at}

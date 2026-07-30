@@ -44,6 +44,7 @@ def wait_for_service(url, name, max_retries=MAX_RETRIES):
 
 
 def get_token(base: str) -> str:
+    time.sleep(6) # required for rate limiting
     req = urllib.request.Request(
         f"{base}/api/auth/token",
         data=b"",

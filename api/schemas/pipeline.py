@@ -37,7 +37,7 @@ class FeaturePayload(BaseModel):
 
 
 class PipelineRequest(BaseModel):
-    roost: RoostInput | None
+    roost: RoostInput
     features: list[FeaturePayload] = Field(default_factory=list)
     params: dict[str, int | float] = Field(default_factory=dict)
 
