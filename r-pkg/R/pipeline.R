@@ -249,6 +249,9 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
     logger::log_info("Rasterizing buildings")
     buildings <- rasterize_buildings(buildingsvec, groundrast)
 
+    logger::log_info("Rasterizing generic resistance polygons")
+    generic_resistance <- rasterize_generic_resistance(spdfs$genericresistance, groundrast)
+
     logger::log_info(paste("Combining extra lights to ", nrow(lamps), " if there are any."))
     print(nrow(lamps))
     if (!is.null(spdfs$lights) && nrow(spdfs$lights) > 0) {
@@ -266,7 +269,7 @@ postprocess_inputs <- function(algorithm_parameters, groundrast, vector_inputs, 
     # TODO: could replace with a struct
     return(list(groundrast=groundrast, r_lcm=r_lcm, r_dtm=r_dtm, r_dsm=r_dsm, rivers=rivers, roads=roads,
             buildingsvec=buildingsvec, buildingsrast=buildings, lamps=lamps,
-            lamps=lamps, circles=circles, disk=disk))
+            circles=circles, disk=disk, generic_resistance=generic_resistance))
 }
 
 #' Resistance pipeline: calculate resistance layers which will go into circuitscape
@@ -314,9 +317,12 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
     point_irradiance <- cal_lamp_irradiance(lamps, surfs$soft_surf, surfs$hard_surf, r_dtm, algorithm_parameters$lampResistance$ext)
     lampRes <- light_resistance(algorithm_parameters$lampResistance$resmax, algorithm_parameters$lampResistance$xmax, point_irradiance)
 
+    logger::log_info("Calculating generic resistance")
+    genericRes <- cal_generic_resistance(base_inputs$generic_resistance, groundrast)
+
     logger::log_info("Getting total resistance")
 
-    totalRes_unnorm <- lampRes + roadRes + riverRes + landscapeRes + linearRes
+    totalRes_unnorm <- lampRes + roadRes + riverRes + landscapeRes + linearRes + genericRes
     # Make sure the minimum non-NA is 1
     totalRes_unnorm <- totalRes_unnorm + 1
 
@@ -385,9 +391,9 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
     n_valid <- sum(!is.na(raster::values(totalRes)))
     pct <- round(100 * n_valid / n_total, 1)
     if (pct < 50) {
-        logger::log_warn("Total resistance coverage: %d/%d pixels (%.1f%%) -- sparse data, check LiDAR coverage", n_valid, n_total, pct)
+        logger::log_warn(sprintf("Total resistance coverage: %d/%d pixels (%.1f%%) -- sparse data, check LiDAR coverage", n_valid, n_total, pct))
     } else {
-        logger::log_info("Total resistance coverage: %d/%d pixels (%.1f%%)", n_valid, n_total, pct)
+        logger::log_info(sprintf("Total resistance coverage: %d/%d pixels (%.1f%%)", n_valid, n_total, pct))
     }
 
     return(list(road_res=roadRes, buildings=buildings, river_res=riverRes, 

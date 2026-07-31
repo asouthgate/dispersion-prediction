@@ -330,3 +330,15 @@ cal_lamp_irradiance <- function(lamps, soft_surf, hard_surf, dtm, ext) {
     point_irradiance
 }
 
+cal_generic_resistance <- function(generic_rast, base_raster) {
+    logger::log_info("Calculating generic resistance from drawn polygons")
+    if (is.null(generic_rast)) {
+        resistance <- base_raster
+        raster::values(resistance) <- 0
+        return(resistance)
+    }
+    resistance <- generic_rast
+    resistance[is.na(resistance)] <- 0
+    resistance
+}
+

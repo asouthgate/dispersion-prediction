@@ -10,6 +10,7 @@ import re
 import signal
 import shutil as _shutil
 import subprocess
+import threading
 import time
 from typing import Any
 
@@ -18,7 +19,7 @@ from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from pyproj import Transformer
 
-from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL
+from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL, RES_CACHE_TTL_SECONDS
 from services.r_bridge import wgs84_to_bng
 from services.raster_service import tif_to_png
 from services.analytics import emit_pipeline_complete
@@ -32,7 +33,7 @@ REPO_ROOT = os.environ.get("REPO_ROOT", os.path.abspath(os.path.join(os.path.dir
 
 
 def _terminate_group(proc: subprocess.Popen) -> None:
-    """Best-effort termination of a subprocess and any helpers it spawned."""
+    """Attempt to terminate of a subprocess and any helpers it spawned."""
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
     except (ProcessLookupError, PermissionError, OSError):
@@ -61,6 +62,87 @@ def _payload_hash(
     payload = {"stage": stage, "roost": roost, "features": features, "params": params}
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _payload_hash_ns(
+    roost: dict[str, Any] | None,
+    features: list[dict[str, Any]],
+    params: dict[str, int | float],
+) -> str:
+    """Hash for cross-stage cache lookups (resistance -> current)."""
+    payload = {"roost": roost, "features": features, "params": params}
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _touch_res_cache(res_hash: str) -> None:
+    """Extend the TTL of cached resistance results so they survive a long-running Current stage."""
+    try:
+        r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
+        key = f"pipeline:res_cache:{res_hash}"
+        r.expire(key, RES_CACHE_TTL_SECONDS)
+        r.close()
+    except Exception:
+        pass
+
+
+def _store_resistance_cache(
+    roost: dict[str, Any],
+    features: list[dict[str, Any]],
+    params: dict[str, int | float],
+    work_dir: str,
+) -> None:
+    """Store a Redis pointer to completed resistance results for reuse by Current."""
+    res_hash = _payload_hash_ns(roost, features, params)
+    try:
+        r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
+        r.set(f"pipeline:res_cache:{res_hash}", work_dir, ex=RES_CACHE_TTL_SECONDS)
+        r.close()
+        logger.info("Stored resistance cache: hash=%s work_dir=%s", res_hash, work_dir)
+    except Exception as e:
+        logger.warning("Failed to store resistance cache: %s", e)
+
+
+def _try_reuse_resistance_cache(
+    roost: dict[str, Any],
+    features: list[dict[str, Any]],
+    params: dict[str, int | float],
+    work_dir: str,
+) -> bool:
+    """Attempt to reuse cached resistance ASC files from a previous Resistance run.
+
+    Looks up the stage-agnostic payload hash in Redis and copies the
+    circuitscape directory if found and still valid.  Refreshes the TTL
+    first so that long-running Current stages don't lose the cache mid-run.
+    Returns True if the cache was reused, False otherwise.
+    """
+    res_hash = _payload_hash_ns(roost, features, params)
+    try:
+        r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
+        cached_dir = r.get(f"pipeline:res_cache:{res_hash}")
+        r.close()
+    except Exception as e:
+        logger.warning("Failed to read resistance cache: %s", e)
+        return False
+
+    if not cached_dir:
+        return False
+
+    src_asc = os.path.join(cached_dir, "circuitscape", "ground.asc")
+    if not os.path.exists(src_asc):
+        logger.info("Cached resistance work_dir gone, ignoring: %s", cached_dir)
+        return False
+
+    _touch_res_cache(res_hash)
+    logger.info("Reusing cached resistance from %s → %s", cached_dir, work_dir)
+    dst_dir = os.path.join(work_dir, "circuitscape")
+    os.makedirs(dst_dir, exist_ok=True)
+    for fname in os.listdir(os.path.join(cached_dir, "circuitscape")):
+        src = os.path.join(cached_dir, "circuitscape", fname)
+        dst = os.path.join(dst_dir, fname)
+        if os.path.isfile(src) and not os.path.exists(dst):
+            _shutil.copy2(src, dst)
+    return True
 
 
 def _write_input_files(
@@ -206,6 +288,7 @@ def _run_r_pipeline(
 
     logger.info("Running R pipeline: stage=%s script=%s", stage, script_path)
     proc = None
+    task_id = task.request.id
 
     def _on_sigterm(signum, frame):
         if proc is not None:
@@ -222,10 +305,7 @@ def _run_r_pipeline(
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             start_new_session=True,
         )
-        # Guard the cancellation race: if revoke arrived between task start and
-        # Popen, terminate the group now instead of running to the soft limit.
-        # ``is_cancelled`` exists on Request objects in real workers; in eager
-        # mode (tests) Context doesn't expose it, so default to "not cancelled".
+        # Guard the cancellation race
         is_cancelled = getattr(task.request, "is_cancelled", None)
         if callable(is_cancelled) and is_cancelled():
             logger.info("Task was already cancelled; terminating R process group")
@@ -236,7 +316,54 @@ def _run_r_pipeline(
                 pass
             return [], []
 
-        stdout, stderr = proc.communicate(timeout=PIPELINE_TIMEOUT - 60)
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        def _read_and_pipe(stream, capture_list: list[str], prefix: str) -> None:
+            r_sync = None
+            try:
+                r_sync = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
+                log_key = f"pipeline:logs:{task_id}"
+                for line in iter(stream.readline, ""):
+                    capture_list.append(line)
+                    if prefix == "stderr:":
+                        upper = line.upper()
+                        if "WARN" not in upper and "ERROR" not in upper:
+                            continue
+                    stripped = line.rstrip("\n\r")
+                    r_sync.rpush(log_key, f"{prefix}{stripped}" if stripped else prefix)
+                r_sync.expire(log_key, PIPELINE_TIMEOUT * 2)
+            except Exception:
+                pass
+            finally:
+                try:
+                    if r_sync: r_sync.close()
+                except Exception:
+                    pass
+
+        t_out = threading.Thread(target=_read_and_pipe, args=(proc.stdout, stdout_lines, ""), daemon=True)
+        t_err = threading.Thread(target=_read_and_pipe, args=(proc.stderr, stderr_lines, "stderr:"), daemon=True)
+        t_out.start()
+        t_err.start()
+
+        try:
+            proc.wait(timeout=PIPELINE_TIMEOUT - 60)
+        except subprocess.TimeoutExpired:
+            _terminate_group(proc)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            raise RuntimeError(
+                "The pipeline took too long to complete. Try a smaller study area or a higher resolution value."
+            )
+
+        t_out.join(timeout=10)
+        t_err.join(timeout=10)
+
+        stdout = "".join(stdout_lines)
+        stderr = "".join(stderr_lines)
     except FileNotFoundError:
         raise RuntimeError(
             "R environment not configured. Resistance and Current pipelines require R. "
@@ -362,14 +489,17 @@ def run_pipeline_task(
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
                 _progress("Computing resistance maps...")
                 layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
+                _store_resistance_cache(roost, features, params, work_dir)
             elif stage == "current":
                 if not roost:
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
                 asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
                 if not os.path.exists(asc_path):
-                    _progress("Computing resistance maps...")
-                    logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
-                    _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
+                    _progress("Checking for cached resistance results...")
+                    if not _try_reuse_resistance_cache(roost, features, params, work_dir):
+                        _progress("Computing resistance maps...")
+                        logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
+                        _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
                 _progress("Running Circuitscape current map...")
                 layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
             else:

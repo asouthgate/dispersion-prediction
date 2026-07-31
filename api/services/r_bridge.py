@@ -46,6 +46,7 @@ _CATEGORY_PROPERTY_FIELDS: dict[str, dict[str, str]] = {
     "River": {},
     "Lights": {"height": "float"},
     "LightSequence": {"height": "float", "spacing": "float"},
+    "GenericResistance": {"resistanceValue": "float"},
 }
 
 
@@ -97,7 +98,8 @@ def _write_input_files(
     Creates:
       - inputs.json: roost (BNG), params
       - drawn_building.gpkg / drawn_road.gpkg / drawn_river.gpkg /
-        drawn_lights.gpkg / drawn_lightsequence.gpkg  (all in BNG)
+        drawn_lights.gpkg / drawn_lightsequence.gpkg /
+        drawn_genericresistance.gpkg  (all in BNG)
     """
     # Convert roost to BNG
     roost_bng = None
@@ -116,6 +118,7 @@ def _write_input_files(
         "River": [],
         "Lights": [],
         "LightSequence": [],
+        "GenericResistance": [],
     }
 
     for f in features:

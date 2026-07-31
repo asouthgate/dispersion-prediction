@@ -155,7 +155,8 @@ AlgorithmParameters <- R6Class(
         extent = NULL,
         n_circles = 1,
         initialize = function(roost, roadResistance=NULL, riverResistance=NULL, landscapeResistance=NULL, 
-                            linearResistance=NULL, lampResistance=NULL, resolution=1, n_circles=1) {
+                            linearResistance=NULL, lampResistance=NULL,
+                            resolution=1, n_circles=1) {
             self$roost <- roost
             self$roadResistance <- roadResistance
             self$riverResistance <- riverResistance

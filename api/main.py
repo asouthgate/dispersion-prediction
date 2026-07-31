@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -10,10 +11,14 @@ from routers import analytics, pipeline, rasters, auth, pmtiles
 config.setup_logging()
 
 
-# This is startup code
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create the pipeline work directory if it doesn't exist, it will be needed later
+    # Uvicorn has configured its loggers by now. Override the
+    # access-log handler format so every access line carries a datetime
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    for h in logging.getLogger("uvicorn.access").handlers:
+        h.setFormatter(fmt)
+
     os.makedirs(config.PIPELINE_WORK_DIR, exist_ok=True)
     os.makedirs(config.PMTILES_DIR, exist_ok=True)
 

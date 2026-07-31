@@ -49,3 +49,9 @@ class JobStatus(BaseModel):
     error: str | None = None
     warnings: list[str] = Field(default_factory=list)
     layers: list[ResultLayerInfo] | None = None
+
+
+class JobLogsResponse(BaseModel):
+    lines: list[str]
+    offset: int
+    has_more: bool

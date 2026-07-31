@@ -115,19 +115,46 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
 
       try {
         let job: JobStatus = { job_id, status: 'pending', progress: 0, progress_label: '', error: null, warnings: [] };
+        let logOffset = 0;
         for (let poll = 0; poll < MAX_POLLS; poll++) {
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           await delay(poll < SLOW_POLL_AFTER ? POLL_INTERVAL_MS : 5000, signal);
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          const res = await fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { signal });
-          if (!res.ok) throw new Error(`Poll failed: ${res.status}`);
-          job = (await res.json()) as JobStatus;
+          const [statusRes, logsRes] = await Promise.all([
+            fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { signal }),
+            fetchWithAuth(`${API_BASE}/pipeline/${job_id}/logs?offset=${logOffset}`, { signal }).catch(() => null),
+          ]);
+          if (!statusRes.ok) throw new Error(`Poll failed: ${statusRes.status}`);
+          job = (await statusRes.json()) as JobStatus;
+
+          if (logsRes?.ok) {
+            const logs = await logsRes.json() as { lines: string[]; offset: number; has_more: boolean };
+            for (const line of logs.lines) {
+              const level = line.startsWith('stderr:') && (
+                line.includes('WARN') || line.includes('ERROR') || line.includes('warn') || line.includes('error')
+              ) ? 'warning' : 'info';
+              ctx.onLog?.(level, line);
+            }
+            logOffset = logs.offset;
+          }
+
           ctx.onProgress?.({ step: 'submit', fraction: job.progress, label: job.progress_label });
           if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') break;
         }
         if (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled') {
           throw new Error('Pipeline timed out — it took longer than expected. Try a smaller area or contact support.');
         }
+
+        // Fetch any remaining logs after completion
+        try {
+          const finalLogs = await fetchWithAuth(`${API_BASE}/pipeline/${job_id}/logs?offset=${logOffset}`, { signal: new AbortController().signal });
+          if (finalLogs.ok) {
+            const logs = await finalLogs.json() as { lines: string[] };
+            for (const line of logs.lines) {
+              ctx.onLog?.('info', line);
+            }
+          }
+        } catch { /* best-effort */ }
 
         if (job.status === 'failed') {
           ctx.onLog?.('error', job.error ?? 'Pipeline failed');

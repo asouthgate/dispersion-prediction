@@ -38,6 +38,12 @@ JOB_CACHE_TTL_SECONDS = int(os.environ.get("JOB_CACHE_TTL_SECONDS", "86400"))
 # the task it guards.
 JOB_TOKEN_TTL_SECONDS = PIPELINE_TIMEOUT * 2
 
+# How long cached resistance results (ASC files) survive in Redis so a
+# subsequent Current run can reuse them without repeating the Resistance
+# stage. Must be at least PIPELINE_TIMEOUT so the cache outlives any
+# in-flight run that depends on it.
+RES_CACHE_TTL_SECONDS = int(os.environ.get("RES_CACHE_TTL_SECONDS", str(JOB_CACHE_TTL_SECONDS)))
+
 # Global cap on in-flight pipeline jobs (running + queued). New submissions
 # get HTTP 429 once this many jobs are in flight. Size it around
 # PIPELINE_MAX_WORKERS * 2 so the broker queue stays short.

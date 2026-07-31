@@ -15,6 +15,22 @@ rasterize_buildings <- function(buildings, groundrast) {
     buildings_raster
 }
 
+rasterize_generic_resistance <- function(generic_polygons, groundrast) {
+    logger::log_info("Rasterizing generic resistance polygons")
+    if (is.null(generic_polygons) || length(generic_polygons) == 0) {
+        r <- groundrast
+        values(r) <- NA
+        return(r)
+    }
+    if (!("resistanceValue" %in% colnames(generic_polygons@data))) {
+        generic_polygons$resistanceValue <- 100
+    }
+    resistance_raster <- raster::rasterize(generic_polygons, groundrast,
+                                           field = "resistanceValue",
+                                           fun = "max")
+    resistance_raster
+}
+
 get_extra_height_rasters <- function(base_raster, geoms, zvals) {
     r <- base_raster
     values(r) <- 0 

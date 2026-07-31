@@ -7,7 +7,7 @@ import { RoostPanel } from './RoostPanel';
 import { GeneratePanel } from './GeneratePanel';
 import { FileUpload } from './CsvUpload';
 import { HelpPanel } from './HelpPanel';
-import { Bulb } from 'react-coolicons';
+import { Sun, Settings, EditPencilLine01, Layers, CircleHelp } from 'react-coolicons';
 
 interface SectionDef {
   id: string;
@@ -19,12 +19,12 @@ interface SectionDef {
 const iconStyle = { width: 16, height: 16 };
 
 const SECTIONS: SectionDef[] = [
-  { id: 'lights', icon: <Bulb style={iconStyle} />, label: 'Street Lights' },
-  { id: 'params', icon: '⚙', label: 'Parameters' },
-  { id: 'roost', icon: '◯', label: 'Roost' },
-  { id: 'drawings', icon: '◿', label: 'Drawings' },
-  { id: 'generate', icon: '▦', label: 'Generate' },
-  { id: 'help', icon: '⍰', label: 'Help' },
+  { id: 'lights', icon: <Sun style={iconStyle} />, label: 'Street Lights' },
+  { id: 'params', icon: <Settings style={iconStyle} />, label: 'Parameters' },
+  { id: 'roost', icon: '◉', label: 'Roost' },
+  { id: 'drawings', icon: <EditPencilLine01 style={iconStyle} />, label: 'Drawings' },
+  { id: 'generate', icon: <Layers style={iconStyle} />, label: 'Generate' },
+  { id: 'help', icon: <CircleHelp style={iconStyle} />, label: 'Help' },
 ];
 
 interface SidePanelProps {

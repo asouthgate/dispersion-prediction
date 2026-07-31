@@ -1,110 +1,125 @@
 #include <Rcpp.h>
 #include <cmath>
-#include <iostream>
+#include <algorithm>
+#include <vector>
+
 using namespace Rcpp;
 
-// NumericMatrix& irr array to fill
-// int ri_lamp, int cj_lamp, positions of lamp
-// float z, height of lamp
-// terrain, hard_surf, and soft_surf are floor height, hard shadow casters, and transluscent casters
-// absorbance: absorbance of soft casters
-// pixw: width of a pixel in metres, default is 1 pixel = 1 metre^2 
-// cutoff: number of pixels to consider around a light
-// sensor_ht: a height offset, should be set to zero but isnt in the old implementation
-void cal_irradiance_raycast(NumericMatrix& irr, int ri_lamp, int cj_lamp, float z, 
-                            const NumericMatrix& soft_surf, const NumericMatrix& hard_surf, const NumericMatrix& terrain, 
-                            const float& absorbance, const float& pixw, const int& cutoff, const float& sensor_ht) {
-    
-    int m = irr.nrow();
-    int n = irr.ncol();
+static const float LOG10 = 2.302585092994046f;
 
-    if (ri_lamp < 0 || ri_lamp >= m || cj_lamp < 0 || cj_lamp >= n) {
-        Rcpp::warning("cal_irradiance_raycast: lamp index out of bounds: ri=%d, cj=%d, m=%d, n=%d", ri_lamp, cj_lamp, m, n);
-        return;
-    }
+struct Lamp {
+    int ri, cj;
+    float z;
+};
 
-    int px_cutoff = std::ceil(cutoff / pixw);
+void cal_irradiance_raycast(double* irr, int m, int n,
+                             int ri_lamp, int cj_lamp, double z,
+                             const double* soft_surf, const double* hard_surf, const double* terrain,
+                             float absorbance, float pixw, int cutoff, float sensor_ht) {
+
+    if (ri_lamp < 0 || ri_lamp >= m || cj_lamp < 0 || cj_lamp >= n) return;
+
+    int px_cutoff = (int)std::ceil(cutoff / pixw);
     int minj = std::max(cj_lamp - px_cutoff, 0);
     int maxj = std::min(n, cj_lamp + px_cutoff);
     int mini = std::max(ri_lamp - px_cutoff, 0);
     int maxi = std::min(m, ri_lamp + px_cutoff);
 
+    float lamp_elev = terrain[cj_lamp * m + ri_lamp] + z;
+
     for (int cj = minj; cj < maxj; ++cj) {
+        float pxdist_base = (float)(cj_lamp - cj);
+        float pxdist2 = pxdist_base * pxdist_base;
+        float xydist_base = pxdist_base * pixw;
+
         for (int ri = mini; ri < maxi; ++ri) {
 
-            float pxdist = (cj_lamp - cj);
-            float pydist = (ri_lamp - ri);
-            float pxydist = sqrt(std::pow(pxdist, 2) + std::pow(pydist, 2));
-            float pdist = floor(pxydist + 0.5);
+            float pydist_base = (float)(ri_lamp - ri);
+            float pxydist = std::sqrt(pxdist2 + pydist_base * pydist_base);
+            int pdist = (int)std::floor(pxydist + 0.5f);
 
-            float zdist = (terrain(ri_lamp, cj_lamp) + z) - (terrain(ri, cj) + sensor_ht);
+            float zdist = lamp_elev - (terrain[cj * m + ri] + sensor_ht);
             float xydist = pxydist * pixw;
-            float xyzdist = sqrt( pow(xydist, 2) + pow(zdist, 2) );
-            
-            // if (zdist > 0 && !(hard_surf(ri,cj) == -1) && pdist > 0) {
-            if (xydist < cutoff && zdist > 0 && pdist > 0) {
+            float xyzdist2 = xydist * xydist + zdist * zdist;
 
-                float shadow = 1.0;
-                float shading = 0.0;
+            if (xydist >= cutoff || zdist <= 0 || pdist <= 0) continue;
 
-                for (int d = 1; d <= pdist; ++d) {
-                    int dii = std::round(ri + (pydist * d / pdist));
-                    int djj = std::round(cj + (pxdist * d / pdist));
-                    float hiijj = terrain(ri, cj) + sensor_ht + (d/pdist) * zdist;
+            float shadow = 1.0f;
+            float shading = 0.0f;
 
-                    if (hard_surf(dii, djj) + terrain(dii, djj) >= hiijj) {
-                        shadow = 0;
-                        break;
-                    }
-                    if (soft_surf(dii, djj) + terrain(dii, djj) >= hiijj) {
-                        // shading += pixw;
-                        // at least it would b e
-                        shading += pixw * xyzdist/xydist;
-                    }
-                    // if (soft_surf(dii, djj) >= hiijj) {
-                    //     std::cerr << soft_surf(dii, djj) << " " << terrain(dii, djj) << " " <<  hiijj << std::endl;
-                    //     std::cerr << shading << " " << absorbance << " " << absorbance * shading << " " << std::pow(10, absorbance * shading) << " " <<  1.0 / (std::pow(10, absorbance * shading)) << std::endl;
-                    // }
+            float step_i = pydist_base / (float)pdist;
+            float step_j = pxdist_base / (float)pdist;
+            float step_h = zdist / (float)pdist;
+            float cell_elev = terrain[cj * m + ri] + sensor_ht;
+
+            for (int d = 1; d <= pdist; ++d) {
+                float frac = (float)d;
+                int dii = (int)std::round((float)ri + step_i * frac);
+                int djj = (int)std::round((float)cj + step_j * frac);
+                float hiijj = cell_elev + step_h * frac;
+
+                if (hard_surf[djj * m + dii] + terrain[djj * m + dii] >= hiijj) {
+                    shadow = 0.0f;
+                    break;
                 }
-                
-                float invd = 1.0 / std::pow(xyzdist, 2);
-                float occ = 1.0 / (std::pow(10, absorbance * shading));
-                float v = occ * shadow * invd;
-                irr(ri,cj) += v;
-
+                if (soft_surf[djj * m + dii] + terrain[djj * m + dii] >= hiijj) {
+                    shading += pixw * std::sqrt(xyzdist2) / xydist;
+                }
             }
+
+            float invd = 1.0f / xyzdist2;
+            float occ = 1.0f / std::exp(absorbance * shading * LOG10);
+            irr[cj * m + ri] += occ * shadow * invd;
         }
     }
-
 }
 
-// [[Rcpp::export]] 
-NumericMatrix cal_irradiance(NumericMatrix lights, 
+// [[Rcpp::export]]
+NumericMatrix cal_irradiance(NumericMatrix lights,
                                     NumericMatrix soft_surf, NumericMatrix hard_surf, NumericMatrix terrain,
                                     int xmin, int xmax, int ymin, int ymax,
-                                    float abs, float pix, int cutoff, float sensor_ht) {
-    
-    // setup output
+                                    float absorb, float pix, int cutoff, float sensor_ht) {
+
     int m = soft_surf.nrow();
     int n = soft_surf.ncol();
     NumericMatrix irradiance(m, n);
 
     int nlamps = lights.nrow();
+    if (nlamps == 0) return irradiance;
 
+    float xrange = (float)(xmax - xmin);
+    float yrange = (float)(ymax - ymin);
+    float xscale = (float)(n - 1) / xrange;
+    float yscale = (float)(m - 1) / yrange;
+
+    std::vector<Lamp> lamps;
+    lamps.reserve(nlamps);
     for (int i = 0; i < nlamps; ++i) {
-
         float x = lights(i, 0);
         float y = lights(i, 1);
         float z = lights(i, 2);
+        int ri = (int)std::round((ymax - y) * yscale);
+        int cj = (int)std::round((x - xmin) * xscale);
+        if (ri >= 0 && ri < m && cj >= 0 && cj < n) {
+            lamps.push_back({ri, cj, z});
+        }
+    }
 
-        float xrange = xmax - xmin;
-        float yrange = ymax - ymin;
+    // sort by row then column for cache-friendly access to terrain/surface data
+    std::sort(lamps.begin(), lamps.end(),
+        [](const Lamp& a, const Lamp& b) {
+            if (a.ri != b.ri) return a.ri < b.ri;
+            return a.cj < b.cj;
+        });
 
-        int ri_lamp = std::round( (ymax - y) / yrange * (m - 1) );
-        int cj_lamp = std::round( (x - xmin) / xrange * (n - 1) );
+    double* irr = irradiance.begin();
+    const double* soft = soft_surf.begin();
+    const double* hard = hard_surf.begin();
+    const double* terr = terrain.begin();
 
-        cal_irradiance_raycast(irradiance, ri_lamp, cj_lamp, z, soft_surf, hard_surf, terrain, abs, pix, cutoff, sensor_ht);
-
+    for (const auto& lamp : lamps) {
+        cal_irradiance_raycast(irr, m, n, lamp.ri, lamp.cj, lamp.z,
+                               soft, hard, terr, absorb, pix, cutoff, sensor_ht);
     }
 
     return irradiance;

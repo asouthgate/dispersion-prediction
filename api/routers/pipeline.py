@@ -20,6 +20,7 @@ from schemas.pipeline import (
     PipelineRequest,
     PipelineStartResponse,
     JobStatus,
+    JobLogsResponse,
     ResultLayerInfo,
 )
 from services.analytics import daily_token_hash, emit_pipeline_submit
@@ -267,6 +268,29 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
         warnings=warnings,
         layers=layers,
     )
+
+
+@router.get("/{job_id}/logs", response_model=JobLogsResponse)
+async def get_job_logs(job_id: str, offset: int = 0, token: str = Depends(require_auth)):
+    await _check_job_access(get_redis(), job_id, token)
+
+    redis = get_redis()
+    log_key = f"pipeline:logs:{job_id}"
+    try:
+        total = await redis.llen(log_key)
+    except Exception:
+        return JobLogsResponse(lines=[], offset=offset, has_more=False)
+
+    end = min(offset + 200, total)
+    lines = []
+    try:
+        if end > offset:
+            raw = await redis.lrange(log_key, offset, end - 1)
+            lines = [str(ln) for ln in raw]
+    except Exception:
+        pass
+
+    return JobLogsResponse(lines=lines, offset=end, has_more=end < total)
 
 
 @router.delete("/{job_id}")
