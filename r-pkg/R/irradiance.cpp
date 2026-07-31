@@ -15,7 +15,7 @@ struct Lamp {
 void cal_irradiance_raycast(double* irr, int m, int n,
                              int ri_lamp, int cj_lamp, double z,
                              const double* soft_surf, const double* hard_surf, const double* terrain,
-                             double absorbance, double pixw, int cutoff, double sensor_ht) {
+                             float absorbance, float pixw, int cutoff, float sensor_ht) {
 
     if (ri_lamp < 0 || ri_lamp >= m || cj_lamp < 0 || cj_lamp >= n) return;
 
@@ -25,7 +25,7 @@ void cal_irradiance_raycast(double* irr, int m, int n,
     int mini = std::max(ri_lamp - px_cutoff, 0);
     int maxi = std::min(m, ri_lamp + px_cutoff);
 
-    float lamp_elev = terrain[ri_lamp * n + cj_lamp] + z;
+    float lamp_elev = terrain[cj_lamp * m + ri_lamp] + z;
 
     for (int cj = minj; cj < maxj; ++cj) {
         float pxdist_base = (float)(cj_lamp - cj);
@@ -38,7 +38,7 @@ void cal_irradiance_raycast(double* irr, int m, int n,
             float pxydist = std::sqrt(pxdist2 + pydist_base * pydist_base);
             int pdist = (int)std::floor(pxydist + 0.5f);
 
-            float zdist = lamp_elev - (terrain[ri * n + cj] + sensor_ht);
+            float zdist = lamp_elev - (terrain[cj * m + ri] + sensor_ht);
             float xydist = pxydist * pixw;
             float xyzdist2 = xydist * xydist + zdist * zdist;
 
@@ -50,7 +50,7 @@ void cal_irradiance_raycast(double* irr, int m, int n,
             float step_i = pydist_base / (float)pdist;
             float step_j = pxdist_base / (float)pdist;
             float step_h = zdist / (float)pdist;
-            float cell_elev = terrain[ri * n + cj] + sensor_ht;
+            float cell_elev = terrain[cj * m + ri] + sensor_ht;
 
             for (int d = 1; d <= pdist; ++d) {
                 float frac = (float)d;
@@ -58,18 +58,18 @@ void cal_irradiance_raycast(double* irr, int m, int n,
                 int djj = (int)std::round((float)cj + step_j * frac);
                 float hiijj = cell_elev + step_h * frac;
 
-                if (hard_surf[dii * n + djj] + terrain[dii * n + djj] >= hiijj) {
+                if (hard_surf[djj * m + dii] + terrain[djj * m + dii] >= hiijj) {
                     shadow = 0.0f;
                     break;
                 }
-                if (soft_surf[dii * n + djj] + terrain[dii * n + djj] >= hiijj) {
+                if (soft_surf[djj * m + dii] + terrain[djj * m + dii] >= hiijj) {
                     shading += pixw * std::sqrt(xyzdist2) / xydist;
                 }
             }
 
             float invd = 1.0f / xyzdist2;
             float occ = 1.0f / std::exp(absorbance * shading * LOG10);
-            irr[ri * n + cj] += occ * shadow * invd;
+            irr[cj * m + ri] += occ * shadow * invd;
         }
     }
 }
