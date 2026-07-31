@@ -12,12 +12,12 @@ export function AppRoot() {
   const [stage, setStage] = useState<PipelineStage>('coverage');
   const stageRef = useRef(stage);
   stageRef.current = stage;
-  const [token, setToken] = useState<string | null>(null);
+  // const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     acquireToken().then(t => {
-      setToken(t);
-      trackPageview();
+      // setToken(t);
+      trackPageview(t);
     }).catch(console.error);
   }, []);
 
@@ -37,7 +37,7 @@ export function AppRoot() {
     engine.defaultLayerId = stageMap[stage] ?? null;
   }, [stage, engine]);
 
-  if (!token) return null;
+  // if (!token) return null;
 
   return (
     <EngineProvider engine={engine}>
