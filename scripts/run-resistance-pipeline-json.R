@@ -92,7 +92,7 @@ if (raster_inp$raster_failed) {
 }
 
 logger::log_info("Reading drawn features from GeoPackage files...")
-spdfs <- list(buildings = NULL, roads = NULL, rivers = NULL, lights = NULL)
+spdfs <- list(buildings = NULL, roads = NULL, rivers = NULL, lights = NULL, genericresistance = NULL)
 
 read_gpkg_if_exists <- function(cat, working_dir) {
     gpkg_path <- file.path(working_dir, paste0("drawn_", tolower(cat), ".gpkg"))
@@ -106,7 +106,7 @@ read_gpkg_if_exists <- function(cat, working_dir) {
     return(sf_obj)
 }
 
-for (cat in c("Building", "Road", "River", "Lights", "LightSequence")) {
+for (cat in c("Building", "Road", "River", "Lights", "LightSequence", "GenericResistance")) {
     sf_obj <- read_gpkg_if_exists(cat, working_dir)
     if (is.null(sf_obj)) next
 
@@ -145,7 +145,11 @@ for (cat in c("Building", "Road", "River", "Lights", "LightSequence")) {
         }
     } else {
         sp_obj <- as(sf_obj, "Spatial")
-        spdfs[[cat]] <- sp_obj
+        if (cat == "GenericResistance") {
+            spdfs[["genericresistance"]] <- sp_obj
+        } else {
+            spdfs[[cat]] <- sp_obj
+        }
         logger::log_info("Added %d drawn %s features", nrow(sf_obj), cat)
     }
 }

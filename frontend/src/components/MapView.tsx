@@ -23,6 +23,8 @@ import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
 import { Sun } from 'react-coolicons';
 import { Move } from 'react-coolicons';
+import { Loading } from 'react-coolicons';
+import { Triangle } from 'react-coolicons';
 import { getStoredToken, acquireToken, clearToken } from '../auth';
 
 const CENTER: [number, number] = [-3.590523, 50.586362];
@@ -64,7 +66,8 @@ const TOOLS: ToolDef[] = [
   { mode: 'linestring', label: 'Road', icon: <CarAuto style={iconStyle} />, color: '#888888' },
   { mode: 'linestring', label: 'River', icon: <WaterDrop style={iconStyle} />, color: '#3678b5' },
   { mode: 'point', label: 'Lights', icon: <Sun style={iconStyle} />, color: '#ffbd17' },
-  { mode: 'linestring', label: 'Light Sequence', icon: '✦', color: '#ff9900', category: 'LightSequence' },
+  { mode: 'linestring', label: 'Light Sequence', icon: <Loading style={iconStyle} />, color: '#ff9900', category: 'LightSequence' },
+  { mode: 'polygon', label: 'Resistance Zone', icon: <Triangle style={iconStyle} />, color: '#cc4444', category: 'GenericResistance' },
 ];
 
 const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon as never, category: t.category }));
@@ -231,9 +234,10 @@ export function MapView() {
         return { url };
       },
       defaultData: {
-        Building:      { height: 10 },
-        Lights:        { height: 10 },
-        LightSequence: { height: 10, spacing: 50 },
+        Building:           { height: 10 },
+        Lights:             { height: 10 },
+        LightSequence:      { height: 10, spacing: 50 },
+        GenericResistance:  { resistanceValue: 100 },
       },
     });
   }, []);

@@ -50,5 +50,5 @@ write_pipeline_outputs <- function(resistance_maps, raster_inp, working_dir, dis
     n_total <- length(raster::values(resistance_maps$total_res))
     n_valid <- sum(!is.na(raster::values(resistance_maps$total_res)))
     pct <- round(100 * n_valid / n_total, 1)
-    logger::log_info("Completed. %d/%d valid pixels (%.1f%%)", n_valid, n_total, pct)
+    logger::log_info(sprintf("Completed. %d/%d valid pixels (%.1f%%)", n_valid, n_total, pct))
 }

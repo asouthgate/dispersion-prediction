@@ -417,6 +417,13 @@ input, .run-item__name, .run-item__status,
   font-size: 13px;
   border-radius: var(--radius-sm);
   transition: color var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.data-icon-btn svg {
+  width: 14px; height: 14px;
+  color: currentColor;
 }
 .data-icon-btn:hover { color: var(--text-primary); }
 .data-icon-btn--danger:hover { color: var(--danger); }
@@ -460,6 +467,10 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   min-width: 48px; text-align: right;
   font-size: 13px; color: var(--accent);
   font-weight: 600; font-family: var(--font-mono);
+}
+.range-subtext {
+  font-size: 10px; color: var(--text-dim);
+  font-family: var(--font-mono);
 }
 
 .hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
@@ -741,6 +752,88 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 .feature-card-extra .field {
   flex: 1;
   gap: 2px;
+}
+
+.feature-panel__actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.feature-panel__action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+}
+
+.feature-panel__action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.feature-panel__action-btn svg {
+  width: 12px;
+  height: 12px;
+  color: currentColor;
+}
+
+/*  Resolution preset buttons  */
+.resolution-options {
+  display: flex;
+  gap: 4px;
+}
+
+.resolution-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: center;
+}
+
+.resolution-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-light);
+}
+
+.resolution-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.resolution-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.resolution-mppx {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-dim);
+}
+
+.resolution-btn.active .resolution-mppx {
+  color: var(--accent-hover);
 }
 
 /*  CSV upload  */
