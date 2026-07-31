@@ -4,7 +4,7 @@ import { createEngine, EngineProvider } from '@gsbio/engine';
 import { App } from './App';
 import { installHorseshoeBat } from './models/horseshoeBat';
 import type { PipelineStage } from './models/horseshoeBat';
-import { ensureValidToken } from './auth';
+import { acquireToken } from './auth';
 import { trackPageview } from './analytics';
 import './styles/index.css';
 
@@ -15,9 +15,9 @@ export function AppRoot() {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    ensureValidToken().then(t => {
+    acquireToken().then(t => {
       setToken(t);
-      if (t) trackPageview();
+      trackPageview();
     }).catch(console.error);
   }, []);
 

@@ -50,7 +50,7 @@ async def create_token(request: Request):
     # Only armed on success: rejected requests must not start the cooldown.
     await arm_cooldown(request, "auth_token", TOKEN_COOLDOWN_SECONDS)
 
-    logger.info("New session token created")
+    logger.info("New session token created (prefix=%s..)", token[:8])
     return {"token": token, "expires_at": expires_at}
 
 

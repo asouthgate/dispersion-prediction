@@ -1,4 +1,4 @@
-import { getTokenSync } from './auth';
+import { getStoredToken } from './auth';
 
 const CONSENT_KEY = 'analytics-consent';
 
@@ -22,7 +22,7 @@ export async function trackPageview(): Promise<void> {
   if (_pageviewSent) return;
   _pageviewSent = true;
   try {
-    const token = getTokenSync();
+    const token = getStoredToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token && getConsent()) {
       headers['Authorization'] = `Bearer ${token}`;
