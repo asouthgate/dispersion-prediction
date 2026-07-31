@@ -33,7 +33,7 @@ REPO_ROOT = os.environ.get("REPO_ROOT", os.path.abspath(os.path.join(os.path.dir
 
 
 def _terminate_group(proc: subprocess.Popen) -> None:
-    """Best-effort termination of a subprocess and any helpers it spawned."""
+    """Attempt to terminate of a subprocess and any helpers it spawned."""
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
     except (ProcessLookupError, PermissionError, OSError):
@@ -69,7 +69,7 @@ def _payload_hash_ns(
     features: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> str:
-    """Stage-agnostic hash for cross-stage cache lookups (resistance → current)."""
+    """Hash for cross-stage cache lookups (resistance -> current)."""
     payload = {"roost": roost, "features": features, "params": params}
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
