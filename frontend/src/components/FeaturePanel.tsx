@@ -235,10 +235,10 @@ export function FeaturePanel() {
           {allHidden ? ' Show all' : ' Hide all'}
         </button>
         <button className="btn-ghost feature-panel__action-btn" onClick={handleExport} disabled={showEmpty} title="Export drawings">
-          <FileDownload style={{ width: 12, height: 12 }} />
+          <FileDownload style={{ width: 24, height: 24 }} />
         </button>
         <button className="btn-ghost feature-panel__action-btn" onClick={() => fileInputRef.current?.click()} title="Import drawings">
-          <FileUpload style={{ width: 12, height: 12 }} />
+          <FileUpload style={{ width: 24, height: 24 }} />
         </button>
         <input ref={fileInputRef} type="file" accept=".geojson,.json" onChange={handleImport} style={{ display: 'none' }} />
       </div>

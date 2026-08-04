@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useFeatures } from '@gsbio/engine';
-import type { DataFeature, CircleGeometry } from '@gsbio/engine';
+import type { DataFeature } from '@gsbio/engine';
 import { wgs84ToBng, formatCoord } from '../utils/projections';
 
 const DEFAULT_LAT = 50.604;
@@ -12,7 +12,7 @@ function findRoost(features: DataFeature[]): DataFeature | undefined {
 }
 
 export function RoostPanel() {
-  const { state, addFeature, updateCircle } = useFeatures();
+  const { state, updateCircle } = useFeatures();
   const roost = findRoost(state.features);
 
   const [lat, setLat] = useState(String(DEFAULT_LAT));
@@ -26,24 +26,6 @@ export function RoostPanel() {
       setRadius(roost.circle.radiusMeters);
     }
   }, [roost?.circle?.center.lat, roost?.circle?.center.lng, roost?.circle?.radiusMeters]);
-
-  const ensureRoost = useCallback(() => {
-    if (!roost) {
-      const r: CircleGeometry = {
-        center: { lng: parseFloat(lng) || DEFAULT_LNG, lat: parseFloat(lat) || DEFAULT_LAT },
-        radiusMeters: radius,
-      };
-      addFeature({
-        id: `roost-${Date.now()}`,
-        geometryKind: 'circle',
-        category: 'Roost',
-        label: 'Roost',
-        visible: true,
-        geojson: { type: 'Feature', geometry: { type: 'Point', coordinates: [r.center.lng, r.center.lat] }, properties: {} },
-        circle: r,
-      });
-    }
-  }, [roost, lat, lng, radius, addFeature]);
 
   const updateRoost = (field: 'lat' | 'lng' | 'radius', val: number) => {
     if (!roost) return;
@@ -64,8 +46,7 @@ export function RoostPanel() {
     <div className="panel-section">
       {!roost ? (
         <>
-          <p className="hint">No roost placed. Click the map or enter coordinates to place one.</p>
-          <button className="btn" onClick={ensureRoost}>Place Roost at Map Center</button>
+          <p className="hint">Use the roost placement tool to place a roost.</p>
         </>
       ) : (
         <>
