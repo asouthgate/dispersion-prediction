@@ -766,7 +766,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
   gap: 4px;
   font-size: 11px;
   color: var(--text-secondary);
-  padding: 4px 8px;
+  padding: 8px 12px;
 }
 
 .feature-panel__action-btn:disabled {
@@ -775,8 +775,8 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 }
 
 .feature-panel__action-btn svg {
-  width: 12px;
-  height: 12px;
+  width: 24px;
+  height: 24px;
   color: currentColor;
 }
 
@@ -970,24 +970,18 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 .privacy-modal__body p { margin-bottom: 12px; }
 .privacy-modal__body p:last-child { margin-bottom: 0; }
 
-/*  SIDE PANEL LOGO SCROLLER  */
+/*  SIDE PANEL LOGOS  */
 
 .side-panel__logos {
   padding: 14px 14px;
-  overflow: hidden;
   border-top: 1px solid var(--border);
 }
 
 .side-panel__logos-track {
   display: flex;
-  align-items: center;
-  gap: 24px;
-  width: max-content;
-  animation: logoScroll 24s linear infinite;
-}
-
-.side-panel__logos-track:hover {
-  animation-play-state: paused;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
 }
 
 .side-panel__logo {
@@ -1000,11 +994,6 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 
 .side-panel__logo:hover {
   opacity: 1;
-}
-
-@keyframes logoScroll {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
 }
 
 /*  RESPONSIVE (≤ 768px)  */

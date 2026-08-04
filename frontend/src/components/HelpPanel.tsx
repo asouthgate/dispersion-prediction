@@ -3,7 +3,7 @@ export function HelpPanel() {
   return (
     <div className="help-content">
       <p><b>1. Check the <a href="https://github.com/js01/dispersion-prediction-app/wiki/Tutorial" target="_blank" rel="noopener noreferrer">tutorial</a> for more information.</b></p>
-      <p><b>2. Pinpoint your roost</b> - click the map or enter coordinates in the Roost panel.</p>
+      <p><b>2. Pinpoint your roost</b> - use the roost placement tool to place the roost.</p>
       <p><b>3. Import street light data</b> - upload a CSV via the Street Lights section.</p>
       <p><b>4. Draw features</b> - use the toolbar above the map to draw buildings, roads, rivers, lights, or light strings.</p>
       <p><b>5. Generate maps</b> - select a stage (Coverage, Resistance, Current) and click Run Model.</p>
