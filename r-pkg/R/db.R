@@ -33,7 +33,7 @@ build_query_string <- function(table_name, extent) {
         FROM {table_name}
         WHERE ST_Intersects({table_name}.geom, ST_MakeEnvelope({xmin}, {ymin}, {xmax}, {ymax}, 27700));
     ")
-    logger::log_info(paste("got query: ", query))
+    logger::log_debug(paste("got query: ", query))
     return(query)
 }
 
@@ -54,43 +54,22 @@ read_db_vector <- function(table_name, ext, db_host, db_name, db_port, db_user, 
     # pgGetGeom is maybe badly designed: it calls pgGetGeomQ which calls pgGetGeom again, and
     #   obfuscates errors that are raised
     #   one way around seems to be to capture all output
-    # tt <- textConnection("redirected_messages", "w")
-    # sink(tt, type="message")
     results_sf <- tryCatch( {
             driver <- DBI::dbDriver("PostgreSQL")
             connection <- connect_to_db(driver, db_host, db_name, db_port, db_user, db_pass)
             query <- build_query_string(table_name, ext)
-            logger::log_info(paste("Querying db with: ", query))
+            logger::log_debug(paste("Querying db with: ", query))
             results_sf <- get_geom(connection, query)
         },
         error=function(err) {
-            logger::log_info("exception occurred:")
-            message(err$message)
-            # logger::log_info("redir message:")
-            # message(redirected_messages)
-            
-            # print(redirected_messages)
-            # if (grepl("No geometries found", redirected_messages)) {
-                # There are no geometries, this should not terminate, just return empty sp df
+            logger::log_debug("exception from vector db: %s", err$message)
             results_sf <- sp::SpatialPoints(data.frame(x = 0, y = 0))[-1,]
-            # logger::log_info("Got something from the db, and disconnnected")
-            # print("???")
             return(results_sf)
-            # }
-            # else {
-            #     logger::log_info(paste("Going to :@ raise again", err$message))
-            #     # Something else, terminate
-            #     sink(type="message")
-            #     close(tt)
-            #     stop(err$message)
-            # }
         }
     )
     if (inherits(results_sf, "sf") || inherits(results_sf, "sfc")) {
         results_sf <- sf::st_zm(results_sf)
     }
-    # sink(type="message")
-    # close(tt)
     logger::log_info("Disconnecting...")
     disconnect_db(connection)
     logger::log_info("Got something from the db, and disconnnected")
@@ -145,7 +124,7 @@ read_db_raster_custom2 <- function(table, ext, db_host, db_name, db_port, db_use
             ' WHERE odtm.tile_extent && t2.geom) as a;')
 
 
-    logger::log_info(metastr)
+    logger::log_debug(metastr)
     call <- paste0("PGPASSWORD=", db_pass, " psql -U ", db_user, 
         " -d ", db_name, " -h ",
         db_host, " -p ", db_port, " -P pager=off -c \'", str, "\'")
@@ -189,17 +168,17 @@ read_db_raster_custom <- function(table, ext, db_host, db_name, db_port, db_user
 
     nrows <- floor( (maxy-miny) / resolution )
 
-    logger::log_info(paste(table, db_host, db_name, db_port, db_user, resolution))
+    logger::log_debug(paste(table, db_host, db_name, db_port, db_user, resolution))
 
     logger::log_info(paste("Ncols/Nrows:", ncols, nrows))
     logger::log_info(paste("Bounds:", minx, maxx, miny, maxy))
 
     logger::log_debug("building string")
 
-    logger::log_info(paste0(minx, maxx, miny, maxy))
+    logger::log_debug(paste0(minx, maxx, miny, maxy))
 
     env_string <- paste0('ST_MakeEnvelope(', minx, ',', miny, ',', maxx, ',', maxy, ', 27700)')
-    logger::log_info(env_string)
+    logger::log_debug(env_string)
 
     env_string <- paste0("ST_SetSRID(ST_GeomFromText($$POLYGON((", 
         minx, " ", maxy, ",", 
@@ -208,9 +187,9 @@ read_db_raster_custom <- function(table, ext, db_host, db_name, db_port, db_user
         maxx, " ", maxy, ",",
         minx, " ", maxy, "))$$), 27700)")
 
-    logger::log_info(env_string)
+    logger::log_debug(env_string)
 
-    logger::log_info("big str")
+    logger::log_debug("big str")
 
     transformstr <- paste0('ST_Resample(ST_Clip(ST_Union(\"rast\", 1),', env_string, '), ', 
                                     ncols, ', ', nrows, ', ', maxx, ', ', miny, 
@@ -220,8 +199,8 @@ read_db_raster_custom <- function(table, ext, db_host, db_name, db_port, db_user
 
     str <- paste0('select ', selectstr, ' from \"public\".\"', 
                     table, '\" WHERE ST_Intersects(\"rast\",', env_string, ');')
+    logger::log_debug(str)
 
-    logger::log_info(str)
     metastr <- paste0('select ',
                     'st_xmax(st_envelope(rast)) as xmx, ',
                     'st_xmin(st_envelope(rast)) as xmn, ',
@@ -230,7 +209,7 @@ read_db_raster_custom <- function(table, ext, db_host, db_name, db_port, db_user
         ' from (select ', transformstr, ' rast from \"public\".\"', 
         table, '\" WHERE ST_Intersects(\"rast\",', env_string, ')) as a;')
 
-    logger::log_info(metastr)
+    logger::log_debug(metastr)
     call <- paste0("PGPASSWORD=", db_pass, " psql -U ", db_user, 
         " -d ", db_name, " -h ",
         db_host, " -p ", db_port, " -P pager=off -c \'", str, "\'")
@@ -245,7 +224,6 @@ read_db_raster_custom <- function(table, ext, db_host, db_name, db_port, db_user
     metavals <- str_split(system(metacall, intern=TRUE), "\n")[[3]]
     metavals <- as.numeric(str_split(metavals, "\\|")[[1]])
     L <- length(vals)
-    cat(nrows, ncols, L, '\n')
     vals <- as.numeric(vals[3:(L-2)])
     
     dbmaxx <- metavals[1]
@@ -253,15 +231,12 @@ read_db_raster_custom <- function(table, ext, db_host, db_name, db_port, db_user
     dbmaxy <- metavals[3]
     dbminy <- metavals[4]
 
-    cat(dbmaxx, dbminx, dbmaxy, dbminy, "\n")
-
     
     r <- raster::raster(nrows=nrows, ncols=ncols, xmn=dbminx, xmx=dbmaxx, ymn=dbminy, ymx=dbmaxy, crs=sf::st_crs(27700)$proj4string)
     raster::values(r) <- vals
     raster::crop(r, ext)
 
     logger::log_info("Got raster")
-    print(r)
 
     r
 }
@@ -295,18 +270,13 @@ read_db_raster <- function(table, ext, db_host, db_name, db_port, db_user, db_pa
 read_db_raster_default <- function(table, ext, db_host, db_name, db_port, db_user, db_pass, default, resolution=NULL, use_overview=FALSE) {
     failflag <- FALSE
     raster <- default
-    # print(ext)
-    # print(default)
-    # cat(table, db_host, db_name, db_port, db_user, db_pass, resolution)
     tryCatch(
         {
-            # raster <- read_db_raster(table, ext, db_host, db_name, db_port, db_user, db_pass) 
             raster <- read_db_raster_custom2(table, ext, db_host, db_name, db_port, db_user, 
                 db_pass, resolution=resolution, use_overview=use_overview) 
         },
         error=function(err) {
             logger::log_warn("Failed to retrieve raster from database!")
-            # logger::log_warn(err)
             logger::log_warn(err$message)
             failflag <<- TRUE
         }

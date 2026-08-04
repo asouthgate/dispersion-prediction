@@ -54,6 +54,8 @@ ENV PATH="/root/.juliaup/bin:${PATH}"
 COPY docker/JuliaProject.toml /opt/julia/
 RUN julia -e 'using Pkg; Pkg.activate("/opt/julia"); Pkg.instantiate()'
 
+RUN Rscript -e "options(interactive = FALSE); install.packages('testthat', clean = TRUE)"
+
 COPY api/requirements.txt /tmp/
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
@@ -63,7 +65,6 @@ COPY r-pkg/R/ /app/r-pkg/R/
 COPY scripts/ /app/scripts/
 COPY r-pkg/R/cs.ini.template /app/r-pkg/R/cs.ini.template
 COPY docker/batapp/bats.cfg.template /opt/bats.cfg.template
-RUN Rscript -e "options(interactive = FALSE); install.packages('testthat', clean = TRUE)"
 
 COPY test/ /app/test/
 

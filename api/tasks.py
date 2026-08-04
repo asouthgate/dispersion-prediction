@@ -32,6 +32,44 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = os.environ.get("REPO_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
+# We don't rely on these, they are only here as super safety check
+_log_redact_re = re.compile(
+    r'(?:PGPASSWORD|password|pass(?:wd)?)=\S+',
+    re.IGNORECASE,
+)
+
+_log_redact_url_re = re.compile(
+    r'postgres(?:ql)?://[^\s]+',
+    re.IGNORECASE,
+)
+
+
+def _log_redact(msg: str) -> str:
+    # Don't rely on this just for triple safety
+    msg = _log_redact_re.sub('_____', msg)
+    msg = _log_redact_url_re.sub('_____', msg)
+    return msg
+
+
+def _try_parse_log_line(line: str) -> str | None:
+    stripped = line.rstrip("\n\r")
+    if not stripped:
+        return None
+    try:
+        msg = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not msg.get("user_visible"):
+        return None
+    level = msg.get("level", "info")
+    text = str(msg.get("msg", ""))
+    text = _log_redact(text)
+    if level == "warn" or level == "error":
+        return f"stderr:{level.upper()}: {text}"
+    else:
+        return text
+
+
 def _terminate_group(proc: subprocess.Popen) -> None:
     """Attempt to terminate of a subprocess and any helpers it spawned."""
     try:
@@ -326,18 +364,16 @@ def _run_r_pipeline(
                 log_key = f"pipeline:logs:{task_id}"
                 for line in iter(stream.readline, ""):
                     capture_list.append(line)
-                    if prefix == "stderr:":
-                        upper = line.upper()
-                        if "WARN" not in upper and "ERROR" not in upper:
-                            continue
-                    stripped = line.rstrip("\n\r")
-                    r_sync.rpush(log_key, f"{prefix}{stripped}" if stripped else prefix)
+                    text = _try_parse_log_line(line)
+                    if text is not None:
+                        r_sync.rpush(log_key, text)
                 r_sync.expire(log_key, PIPELINE_TIMEOUT * 2)
             except Exception:
                 pass
             finally:
                 try:
-                    if r_sync: r_sync.close()
+                    if r_sync:
+                        r_sync.close()
                 except Exception:
                     pass
 
