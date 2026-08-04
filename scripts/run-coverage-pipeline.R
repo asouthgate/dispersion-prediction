@@ -25,8 +25,8 @@ args <- commandArgs(trailingOnly = TRUE)
 input_path <- args[1]
 working_dir <- dirname(input_path)
 
-user_log_info("Input: %s", input_path)
-user_log_info("Working dir: %s", working_dir)
+logger::log_debug("Input: %s", input_path)
+logger::log_debug("Working dir: %s", working_dir)
 
 dir.create(file.path(working_dir, "images"), recursive = TRUE, showWarnings = FALSE)
 
@@ -82,10 +82,10 @@ for (name in expected_names) {
     }
 }
 
-user_log_info("Coverage layers written: %s", paste(written, collapse=", "))
+logger::log_debug("Coverage layers written: %s", paste(written, collapse=", "))
 if (length(written) < length(expected_names)) {
     missing <- setdiff(sub("^r_", "", expected_names), written)
-    user_log_warn("Missing coverage layers: %s", paste(missing, collapse=", "))
+    logger::log_debug("Missing coverage layers: %s", paste(missing, collapse=", "))
 }
 
 user_log_info("Coverage pipeline complete.")

@@ -27,8 +27,8 @@ args <- commandArgs(trailingOnly = TRUE)
 input_path <- args[1]
 working_dir <- dirname(input_path)
 
-user_log_info("Input: %s", input_path)
-user_log_info("Working dir: %s", working_dir)
+logger::log_debug("Input: %s", input_path)
+logger::log_debug("Working dir: %s", working_dir)
 
 dir.create(file.path(working_dir, "images"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(working_dir, "circuitscape"), recursive = TRUE, showWarnings = FALSE)
@@ -102,7 +102,7 @@ read_gpkg_if_exists <- function(cat, working_dir) {
         logger::log_debug("No drawn %s GPKG found at %s", cat, gpkg_path)
         return(NULL)
     }
-    user_log_info("Reading drawn %s from %s", cat, gpkg_path)
+    logger::log_debug("Reading drawn %s from %s", cat, gpkg_path)
     sf_obj <- sf::st_read(gpkg_path, quiet = TRUE)
     if (is.null(sf_obj) || nrow(sf_obj) == 0) return(NULL)
     return(sf_obj)
