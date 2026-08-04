@@ -130,9 +130,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
           if (logsRes?.ok) {
             const logs = await logsRes.json() as { lines: string[]; offset: number; has_more: boolean };
             for (const line of logs.lines) {
-              const level = line.startsWith('stderr:') && (
-                line.includes('WARN') || line.includes('ERROR') || line.includes('warn') || line.includes('error')
-              ) ? 'warning' : 'info';
+              const level = line.startsWith('stderr:') ? 'warning' : 'info';
               ctx.onLog?.(level, line);
             }
             logOffset = logs.offset;

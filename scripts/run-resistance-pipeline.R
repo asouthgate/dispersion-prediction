@@ -5,8 +5,6 @@ source('r-pkg/R/pipeline.R')
 args <- commandArgs(trailingOnly=TRUE)
 
 load(args[1])
-# load(args[2])
-# load(args[3])
 
 logger::log_info(paste("Run resistance script called with:", args[1]))
 
