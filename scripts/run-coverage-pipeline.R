@@ -74,7 +74,7 @@ for (name in expected_names) {
     if (!is.null(rast) && inherits(rast, "RasterLayer")) {
         fname <- sub("^r_", "", name)
         tif_path <- file.path(working_dir, paste0(fname, ".tif"))
-        user_log_info("Writing %s -> %s", fname, tif_path)
+        user_log_info("Writing %s", fname)
         raster::writeRaster(rast, tif_path, "GTiff", overwrite = TRUE)
         written <- c(written, fname)
     } else {
