@@ -49,6 +49,8 @@ _CATEGORY_PROPERTY_FIELDS: dict[str, dict[str, str]] = {
     "GenericResistance": {"resistanceValue": "float"},
 }
 
+_BROWSER_SIDE_CATEGORIES = {"Lights", "LightSequence"}
+
 
 def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str,
                            prop_schema: dict[str, str] | None = None) -> None:
@@ -111,22 +113,26 @@ def _write_input_files(
             "radius": roost.get("radiusMeters", roost.get("radius_meters", 2500)),
         }
 
-    # Classify features by category
+    # Classify features by category (skip browser-side categories)
     by_category: dict[str, list[dict[str, Any]]] = {
         "Building": [],
         "Road": [],
         "River": [],
-        "Lights": [],
-        "LightSequence": [],
         "GenericResistance": [],
     }
 
+    lamp_count = 0
     for f in features:
         cat = f.get("category", "")
-        if cat in by_category:
+        if cat in _BROWSER_SIDE_CATEGORIES:
+            lamp_count += 1
+        elif cat in by_category:
             by_category[cat].append(f)
         elif cat == "Roost":
             pass  # roost handled separately
+
+    if lamp_count > 0:
+        logger.info("Skipped %d lamp feature(s) — computed browser-side via WASM", lamp_count)
 
     # Write GeoPackage files per category (geometries transformed to BNG)
     for cat, feats in by_category.items():
@@ -228,11 +234,12 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
         ("river_res", "River Resistance"),
         ("landscape_res", "Landscape Resistance"),
         ("linear_res", "Linear Resistance"),
-        ("lamp_res", "Lamp Resistance"),
-        ("log_lamp_res", "Log Lamp Resistance"),
         ("dsm", "Digital Surface Model"),
         ("dtm", "Digital Terrain Model"),
         ("lcm", "Land Cover Map"),
+        ("soft_surf", "Soft Surface"),
+        ("hard_surf", "Hard Surface"),
+        ("generic_res", "Generic Resistance"),
         ("log_current", "Log Current"),
     ]
 
@@ -257,3 +264,25 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
         logger.info("All coverage layers present: %s", coverage_found)
 
     return layers
+
+def collect_raster_info(work_dir: str) -> dict | None:
+    """Read raster extent metadata from the first GeoTIFF in the work dir."""
+    import os as _os
+    try:
+        for fname in _os.listdir(work_dir):
+            if fname.endswith('.tif'):
+                path = _os.path.join(work_dir, fname)
+                import rasterio
+                with rasterio.open(path) as src:
+                    return {
+                        "m": src.height,
+                        "n": src.width,
+                        "pixw": abs(src.transform.a),
+                        "xmin": src.bounds.left,
+                        "ymin": src.bounds.bottom,
+                        "xmax": src.bounds.right,
+                        "ymax": src.bounds.top,
+                    }
+    except (FileNotFoundError, OSError):
+        pass
+    return None

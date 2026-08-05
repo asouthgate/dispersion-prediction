@@ -43,6 +43,11 @@ export function FileUpload() {
       {loaded > 0 && (
         <p className="hint">Loaded {loaded} lamps</p>
       )}
+      <p className="gov-notice">
+        By uploading street light data you confirm you have permission to use
+        it. Irradiance resistance is calculated in your browser via
+        WebAssembly — raw lamp positions are never sent to our server.
+      </p>
       {warning && (
         <div className="warning-banner">{warning}</div>
       )}

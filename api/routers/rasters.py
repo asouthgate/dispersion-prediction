@@ -76,9 +76,6 @@ async def get_raster_png(task_id: str, layer: str, _token: str = Depends(require
             raise HTTPException(status_code=404, detail=f"Layer {layer} not found for job {task_id}")
 
         os.makedirs(os.path.join(job_dir, "images"), exist_ok=True)
-        # Render to a temp file then atomically rename so a concurrent request
-        # never serves a partially-written PNG. Runs in a threadpool so raster
-        # I/O + matplotlib don't block the event loop for other requests.
         tmp_path = f"{png_path}.{os.getpid()}.tmp"
         try:
             colormap = "plasma" if "current" in layer else "magma"
@@ -97,6 +94,23 @@ async def get_raster_png(task_id: str, layer: str, _token: str = Depends(require
     return FileResponse(
         png_path,
         media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@router.get("/{task_id}/raw/{layer}.tif")
+async def get_raw_tif(task_id: str, layer: str, _token: str = Depends(require_auth)):
+    """Serve a raw GeoTIFF for client-side computation."""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', layer):
+        raise HTTPException(status_code=400, detail="Invalid layer name")
+    h = await _resolve_task_id(task_id)
+    job_dir = _get_job_dir(h)
+    tif_path = os.path.join(job_dir, f"{layer}.tif")
+    if not os.path.exists(tif_path):
+        raise HTTPException(status_code=404, detail=f"Raw raster {layer} not found")
+    return FileResponse(
+        tif_path,
+        media_type="image/tiff",
         headers={"Cache-Control": "public, max-age=3600"},
     )
 

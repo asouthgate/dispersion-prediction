@@ -25,10 +25,16 @@ class FeaturePayload(BaseModel):
         populate_by_name = True
 
 
+class TotalResistancePayload(BaseModel):
+    extent: dict[str, Any]
+    data_base64: str
+
+
 class PipelineRequest(BaseModel):
     roost: RoostInput
     features: list[FeaturePayload] = Field(default_factory=list)
     params: dict[str, int | float] = Field(default_factory=dict)
+    total_resistance: TotalResistancePayload | None = None
 
 
 class PipelineStartResponse(BaseModel):
@@ -42,6 +48,16 @@ class ResultLayerInfo(BaseModel):
     bounds: tuple[float, float, float, float]
 
 
+class RasterExtentInfo(BaseModel):
+    m: int
+    n: int
+    pixw: float
+    xmin: float
+    ymin: float
+    xmax: float
+    ymax: float
+
+
 class JobStatus(BaseModel):
     job_id: str
     status: str  # pending | running | completed | failed | cancelled
@@ -50,6 +66,8 @@ class JobStatus(BaseModel):
     error: str | None = None
     warnings: list[str] = Field(default_factory=list)
     layers: list[ResultLayerInfo] | None = None
+    raw_tifs: dict[str, str] | None = None
+    raster_extent: RasterExtentInfo | None = None
 
 
 class JobLogsResponse(BaseModel):

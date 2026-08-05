@@ -6,9 +6,12 @@ import type {
 } from '@gsbio/engine';
 import type { PipelineStage } from './model';
 import { horseshoeBatModel } from './model';
-import { fetchWithAuth } from '../../auth';
+import { runPipelineJob } from './pipelineClient';
+import { computeLampsWasm, buildLampResultLayers, encodeTotalResistance, type StoredTotalRes } from './lampComputation';
 
-const API_BASE = '/api';
+const LAMP_CATEGORIES = new Set(['Lights', 'LightSequence']);
+
+let storedTotalRes: StoredTotalRes | null = null;
 
 interface RoostInfo {
   lng: number;
@@ -30,17 +33,8 @@ interface PipelinePayload {
   stage: PipelineStage;
   roost: RoostInfo | null;
   features: FeaturePayload[];
+  lampFeatures: DataFeature[];
   params: Record<string, number>;
-}
-
-interface JobStatus {
-  job_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-  progress: number;
-  progress_label: string;
-  error: string | null;
-  warnings: string[];
-  layers?: { id: string; name: string; url: string; bounds: [number, number, number, number] }[];
 }
 
 function selectRoost(features: ReadonlyArray<DataFeature>): RoostInfo | null {
@@ -80,122 +74,82 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         ctx.onLog?.('error', 'No Roost circle drawn — place a roost first.');
         throw new Error('No roost defined. Place a roost on the map first.');
       }
-      const features = ctx.features.map(featureToPayload);
-      const params = { ...ctx.params };
-      return { payload: { stage: getStage(), roost, features, params } };
+      const allFeatures = ctx.features;
+      const nonLampFeatures = allFeatures.filter(f => !LAMP_CATEGORIES.has(f.category));
+      const lampFeatures = allFeatures.filter(f => LAMP_CATEGORIES.has(f.category));
+      return {
+        payload: {
+          stage: getStage(),
+          roost,
+          features: nonLampFeatures.map(featureToPayload),
+          lampFeatures: lampFeatures as DataFeature[],
+          params: { ...ctx.params },
+        },
+      };
     },
 
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { stage, roost, features, params } = ctx.payload as PipelinePayload;
+      const { stage, roost, features, lampFeatures, params } = ctx.payload as PipelinePayload;
 
-      ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features`);
+      ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features` +
+        (lampFeatures.length > 0 ? ` · ${lampFeatures.length} lamp(s) (browser-side)` : ''));
 
-      const startRes = await fetchWithAuth(`${API_BASE}/pipeline/${stage}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roost, features, params }),
-        signal,
+      if (lampFeatures.length > 0) {
+        ctx.onLog?.('info', 'Lamp irradiance resistance will be computed locally in your browser. Raw lamp positions are not sent to the server.');
+      }
+
+      const body: Record<string, unknown> = { roost, features, params };
+      if (stage === 'current' && storedTotalRes) {
+        body.total_resistance = encodeTotalResistance(storedTotalRes);
+        ctx.onLog?.('info', 'Attaching browser-computed total resistance for Circuitscape');
+      }
+
+      const job = await runPipelineJob(stage, body, signal, {
+        onLog: ctx.onLog,
+        onProgress: ctx.onProgress,
       });
-      if (!startRes.ok) {
-        let detail = `HTTP ${startRes.status}`;
-        try {
-          const body = await startRes.json();
-          if (body.detail) detail = body.detail;
-        } catch {}
-        throw new Error(`Failed to start pipeline: ${detail}`);
+
+      if (job.status === 'cancelled') {
+        return { layers: [] as ResultLayerEntry[], summary: { status: 'cancelled' } };
       }
-      const { job_id } = (await startRes.json()) as { job_id: string };
-      ctx.onLog?.('info', `Job ${job_id} started`);
 
-      // Poll fast for 2 minutes, then back off to 5s. 60×2s + 360×5s ≈ 32min,
-      // covering the server's 30min PIPELINE_TIMEOUT so long jobs aren't
-      // reported as timed-out while still running.
-      const POLL_INTERVAL_MS = 2000;
-      const SLOW_POLL_AFTER = 60;
-      const MAX_POLLS = 420;
+      const hasLamps = lampFeatures.length > 0;
 
-      const onAbort = () => {
-        fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { method: 'DELETE' }).catch(() => {});
-      };
-      signal.addEventListener('abort', onAbort, { once: true });
+      let layers: ResultLayerEntry[] = (job.layers ?? []).map((l) => ({
+        id: l.id,
+        name: l.name,
+        envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
+      }));
 
-      try {
-        let job: JobStatus = { job_id, status: 'pending', progress: 0, progress_label: '', error: null, warnings: [] };
-        let logOffset = 0;
-        for (let poll = 0; poll < MAX_POLLS; poll++) {
-          if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          await delay(poll < SLOW_POLL_AFTER ? POLL_INTERVAL_MS : 5000, signal);
-          if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          const [statusRes, logsRes] = await Promise.all([
-            fetchWithAuth(`${API_BASE}/pipeline/${job_id}`, { signal }),
-            fetchWithAuth(`${API_BASE}/pipeline/${job_id}/logs?offset=${logOffset}`, { signal }).catch(() => null),
-          ]);
-          if (!statusRes.ok) throw new Error(`Poll failed: ${statusRes.status}`);
-          job = (await statusRes.json()) as JobStatus;
-
-          if (logsRes?.ok) {
-            const logs = await logsRes.json() as { lines: string[]; offset: number; has_more: boolean };
-            for (const line of logs.lines) {
-              const level = line.startsWith('stderr:') ? 'warning' : 'info';
-              ctx.onLog?.(level, line);
-            }
-            logOffset = logs.offset;
-          }
-
-          ctx.onProgress?.({ step: 'submit', fraction: job.progress, label: job.progress_label });
-          if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') break;
-        }
-        if (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled') {
-          throw new Error('Pipeline timed out — it took longer than expected. Try a smaller area or contact support.');
-        }
-
-        // Fetch any remaining logs after completion
-        try {
-          const finalLogs = await fetchWithAuth(`${API_BASE}/pipeline/${job_id}/logs?offset=${logOffset}`, { signal: new AbortController().signal });
-          if (finalLogs.ok) {
-            const logs = await finalLogs.json() as { lines: string[] };
-            for (const line of logs.lines) {
-              ctx.onLog?.('info', line);
-            }
-          }
-        } catch { /* best-effort */ }
-
-        if (job.status === 'failed') {
-          ctx.onLog?.('error', job.error ?? 'Pipeline failed');
-          throw new Error(job.error ?? 'Pipeline failed');
-        }
-        if (job.status === 'cancelled') {
-          ctx.onLog?.('warning', 'Job was cancelled');
-          return { layers: [] as ResultLayerEntry[], summary: { status: 'cancelled' } };
-        }
-
-        const layers: ResultLayerEntry[] = (job.layers ?? []).map((l) => ({
-          id: l.id,
-          name: l.name,
-          envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
-        }));
-
-        for (const w of job.warnings ?? []) {
-          ctx.onLog?.('warning', w);
-        }
-
-        ctx.onProgress?.({ step: 'submit', fraction: 1, label: `${layers.length} layers` });
-        return { layers, summary: { stage, layerCount: layers.length }, taskId: job_id };
-      } finally {
-        signal.removeEventListener('abort', onAbort);
+      if (hasLamps) {
+        const replacedIds = new Set(['total_res', 'log_total_res']);
+        layers = layers.filter(l => !replacedIds.has(l.id));
       }
+
+      if (stage === 'resistance' && hasLamps && job.raw_tifs && job.raster_extent) {
+        ctx.onLog?.('info', `Computing lamp irradiance in browser via WebAssembly (${lampFeatures.length} lamp feature(s))...`);
+        ctx.onProgress?.({ step: 'submit', fraction: 0.95, label: 'Computing lamp resistance...' });
+
+        try {
+          const extent = job.raster_extent;
+          const { totalRes, lampRes, extractedCount } = await computeLampsWasm(
+            lampFeatures, job.raw_tifs, extent, params,
+          );
+          layers.push(...buildLampResultLayers(totalRes, lampRes, extent));
+          storedTotalRes = { data: totalRes, extent };
+          ctx.onLog?.('info', `Lamp irradiance computed browser-side (${extractedCount} point(s)). Total resistance ready for Circuitscape.`);
+        } catch (wasmErr) {
+          const msg = wasmErr instanceof Error ? wasmErr.message : String(wasmErr);
+          ctx.onLog?.('error', `Lamp resistance computation failed: ${msg}`);
+          throw new Error(`Lamp resistance could not be computed in your browser: ${msg}`);
+        }
+      }
+
+      ctx.onProgress?.({ step: 'submit', fraction: 1, label: `${layers.length} layers` });
+      return { layers, summary: { stage, layerCount: layers.length }, taskId: job.job_id };
     },
   };
-}
-
-function delay(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const id = setTimeout(resolve, ms);
-    const onAbort = () => { clearTimeout(id); reject(new DOMException('Aborted', 'AbortError')); };
-    signal?.addEventListener('abort', onAbort, { once: true });
-    signal?.addEventListener('abort', () => clearTimeout(id), { once: true });
-  });
 }
 
 export function installHorseshoeBat(engine: SimulationEngine, getStage: () => PipelineStage): void {

@@ -474,6 +474,7 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 }
 
 .hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+.gov-notice { font-size: 10px; color: var(--text-dim); line-height: 1.4; margin-top: 6px; padding: 6px 8px; background: var(--bg-input); border-radius: 2px; border-left: 3px solid var(--accent); }
 
 /*  BUTTONS  */
 

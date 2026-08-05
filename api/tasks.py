@@ -23,7 +23,7 @@ from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL, RES_CACHE_TTL_SECONDS
 from services.r_bridge import wgs84_to_bng
 from services.raster_service import tif_to_png
 from services.analytics import emit_pipeline_complete
-from services.r_bridge import _write_input_files as wif, collect_results
+from services.r_bridge import _write_input_files as wif, collect_results, collect_raster_info
 from services.raster_service import tif_to_png, get_bounds_for_tif
 from services.raster_service import get_bounds_for_tif
 
@@ -493,6 +493,43 @@ def _cleanup_token_job(task_id: str, success: bool) -> None:
     except Exception:
         pass
 
+def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> None:
+    """Decode browser-computed total resistance and write as GeoTIFF + ASC."""
+    import base64
+    import struct
+    import rasterio
+    from rasterio.transform import from_bounds
+
+    extent = total_res["extent"]
+    m = extent["m"]
+    n = extent["n"]
+    raw = base64.b64decode(total_res["data_base64"])
+    floats = struct.unpack(f"<{m * n}f", raw)
+
+    tif_path = os.path.join(work_dir, "total_res.tif")
+    transform = from_bounds(extent["xmin"], extent["ymin"], extent["xmax"], extent["ymax"], n, m)
+    with rasterio.open(
+        tif_path, "w", driver="GTiff", height=m, width=n, count=1,
+        dtype="float32", crs="EPSG:27700", transform=transform,
+    ) as dst:
+        dst.write_band(1, floats)
+
+    circuitscape_dir = os.path.join(work_dir, "circuitscape")
+    os.makedirs(circuitscape_dir, exist_ok=True)
+
+    asc_path = os.path.join(circuitscape_dir, "resistance.asc")
+    with open(asc_path, "w") as f:
+        f.write(f"ncols         {n}\n")
+        f.write(f"nrows         {m}\n")
+        f.write(f"xllcorner     {extent['xmin']}\n")
+        f.write(f"yllcorner     {extent['ymin']}\n")
+        f.write(f"cellsize      {extent['pixw']}\n")
+        f.write(f"NODATA_value  -9999\n")
+        import numpy as np
+        arr = np.array(floats, dtype=np.float32).reshape((m, n))
+        np.savetxt(f, arr, fmt="%.6f", delimiter=" ")
+
+    logger.info("Wrote browser-computed total resistance (%dx%d) to %s", m, n, asc_path)
 
 @shared_task(bind=True, name="tasks.run_pipeline")
 def run_pipeline_task(
@@ -502,6 +539,7 @@ def run_pipeline_task(
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
     params: dict[str, int | float],
+    total_resistance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a pipeline stage and return its result layers + warnings."""
     t0 = time.monotonic()
@@ -530,9 +568,18 @@ def run_pipeline_task(
                 _progress("Computing resistance maps...")
                 layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
                 _store_resistance_cache(roost, features, params, work_dir)
+
+                raw_tifs = {}
+                for layer in layers:
+                    lid = layer["id"]
+                    raw_tifs[lid] = f"/api/rasters/{self.request.id}/raw/{lid}.tif"
+                raster_extent = collect_raster_info(work_dir)
             elif stage == "current":
                 if not roost:
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
+                if total_resistance:
+                    _progress("Writing browser-computed total resistance...")
+                    _write_total_resistance_raster(work_dir, total_resistance)
                 asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
                 if not os.path.exists(asc_path):
                     _progress("Checking for cached resistance results...")
@@ -550,7 +597,11 @@ def run_pipeline_task(
                         self.request.id, elapsed, len(layers), len(warnings))
             emit_pipeline_complete(stage, elapsed, True)
             success = True
-            return {"layers": layers, "warnings": warnings}
+            result = {"layers": layers, "warnings": warnings}
+            if stage == "resistance":
+                result["raw_tifs"] = raw_tifs
+                result["raster_extent"] = raster_extent
+            return result
 
         except SoftTimeLimitExceeded:
             emit_pipeline_complete(stage, time.monotonic() - t0, False)
