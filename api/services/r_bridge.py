@@ -223,20 +223,17 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
     # Expected raster outputs from the R pipeline
     expected_layers = [
         ("log_total_res", "Log Total Resistance"),
-        ("log_total_res_clipped", "Log Total Resistance (clipped)"),
         ("total_res", "Total Resistance"),
-        ("total_res_clipped", "Total Resistance (clipped)"),
         ("road_res", "Road Resistance"),
         ("river_res", "River Resistance"),
         ("landscape_res", "Landscape Resistance"),
         ("linear_res", "Linear Resistance"),
         ("lamp_res", "Lamp Resistance"),
         ("log_lamp_res", "Log Lamp Resistance"),
-        ("dsm", "DSM"),
-        ("dtm", "DTM"),
-        ("lcm", "LCM"),
+        ("dsm", "Digital Surface Model"),
+        ("dtm", "Digital Terrain Model"),
+        ("lcm", "Land Cover Map"),
         ("log_current", "Log Current"),
-        ("log_current_clipped", "Log Current (clipped)"),
     ]
 
     found_ids = []

@@ -23,7 +23,7 @@ def _apply_circular_mask(rgba: "np.ndarray") -> "np.ndarray":
 
 
 def tif_to_png(tif_path: str, png_path: str, bounds: Optional[tuple[float, float, float, float]] = None,
-               circular_mask: bool = True, colormap: str = "magma") -> tuple[int, int, tuple[float, float, float, float]]:
+               circular_mask: bool = False, colormap: str = "magma") -> tuple[int, int, tuple[float, float, float, float]]:
     """Convert a GeoTIFF to PNG, returning (width, height, bounds).
 
     Returns bounds as [west, south, east, north] in EPSG:4326.

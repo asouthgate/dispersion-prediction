@@ -83,7 +83,7 @@ async def get_raster_png(task_id: str, layer: str, _token: str = Depends(require
         try:
             colormap = "plasma" if "current" in layer else "magma"
             await run_in_threadpool(
-                _render_png, tif_path, tmp_path, not layer.endswith("_clipped"), colormap
+                _render_png, tif_path, tmp_path, "current" in layer, colormap
             )
             os.replace(tmp_path, png_path)
         except Exception as e:

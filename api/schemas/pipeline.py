@@ -37,6 +37,7 @@ class PipelineStartResponse(BaseModel):
 
 class ResultLayerInfo(BaseModel):
     id: str
+    name: str
     url: str
     bounds: tuple[float, float, float, float]
 
