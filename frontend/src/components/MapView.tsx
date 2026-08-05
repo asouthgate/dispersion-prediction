@@ -57,11 +57,11 @@ const MAP_PALETTE: MapPalette = {
 
 const iconStyle = { width: 18, height: 18 };
 
-type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string; maxRadiusMeters?: number };
+type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string; options?: Record<string, unknown> };
 
 const TOOLS: ToolDef[] = [
   { mode: 'select', label: 'Select', icon: <Move style={iconStyle} />, color: '#888' },
-  { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def', maxRadiusMeters: 5000 },
+  { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def', options: { maxRadiusMeters: 5000 } },
   { mode: 'polygon', label: 'Building', icon: <Building04 style={iconStyle} />, color: '#a0522d' },
   { mode: 'linestring', label: 'Road', icon: <CarAuto style={iconStyle} />, color: '#888888' },
   { mode: 'linestring', label: 'River', icon: <WaterDrop style={iconStyle} />, color: '#3678b5' },
@@ -70,7 +70,7 @@ const TOOLS: ToolDef[] = [
   { mode: 'polygon', label: 'Resistance Zone', icon: <Triangle style={iconStyle} />, color: '#cc4444', category: 'GenericResistance' },
 ];
 
-const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon as never, category: t.category, maxRadiusMeters: t.maxRadiusMeters }));
+const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon as never, category: t.category, options: t.options }));
 
 const Feature_OPACITY = 0.2;
 
@@ -82,7 +82,7 @@ const featureStyles: FeatureStyleConfig = {
         case 'point':
           return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 7 } };
         case 'circle':
-          return { mode: t.mode, category: t.category ?? t.label, style: { ...base }, maxRadiusMeters: t.maxRadiusMeters };
+          return { mode: t.mode, category: t.category ?? t.label, style: { ...base }, options: t.options };
         case 'linestring':
           return { mode: t.mode, category: t.category ?? t.label, style: { lineColor: t.color, lineWidth: 2 } };
         case 'polygon':
