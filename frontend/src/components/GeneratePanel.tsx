@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { PipelineStage } from '../models/horseshoeBat';
 import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDimensions, computeMinResolution } from '@gsbio/engine';
 import type { RunLogEntry, DataFeature } from '@gsbio/engine';
@@ -37,6 +37,12 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
   const roostRadius = roost?.circle?.radiusMeters ?? 0;
   const minRes = roostRadius > 0 ? computeMinResolution(roostRadius, MAX_PIXEL_DIMENSION) : 1;
   const pixelDim = roostRadius > 0 ? computePixelDimensions(roostRadius, resolution) : null;
+
+  useEffect(() => {
+    if (roostRadius > 0 && resolution < minRes) {
+      setModelParam('resolution', minRes);
+    }
+  }, [roostRadius, minRes, resolution, setModelParam]);
 
   const handleViewLog = (runId: string, _log: RunLogEntry[]): void => {
     void _log;

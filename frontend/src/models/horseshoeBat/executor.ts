@@ -97,7 +97,14 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         body: JSON.stringify({ roost, features, params }),
         signal,
       });
-      if (!startRes.ok) throw new Error(`Failed to start pipeline: ${startRes.status}`);
+      if (!startRes.ok) {
+        let detail = `HTTP ${startRes.status}`;
+        try {
+          const body = await startRes.json();
+          if (body.detail) detail = body.detail;
+        } catch {}
+        throw new Error(`Failed to start pipeline: ${detail}`);
+      }
       const { job_id } = (await startRes.json()) as { job_id: string };
       ctx.onLog?.('info', `Job ${job_id} started`);
 
