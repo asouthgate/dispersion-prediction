@@ -114,35 +114,35 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         return { layers: [] as ResultLayerEntry[], summary: { status: 'cancelled' } };
       }
 
-      const hasLamps = lampFeatures.length > 0;
+      const replacedIds = new Set(['total_res', 'log_total_res']);
+      let layers: ResultLayerEntry[] = (job.layers ?? [])
+        .filter(l => !replacedIds.has(l.id))
+        .map((l) => ({
+          id: l.id,
+          name: l.name,
+          envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
+        }));
 
-      let layers: ResultLayerEntry[] = (job.layers ?? []).map((l) => ({
-        id: l.id,
-        name: l.name,
-        envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
-      }));
-
-      if (hasLamps) {
-        const replacedIds = new Set(['total_res', 'log_total_res']);
-        layers = layers.filter(l => !replacedIds.has(l.id));
-      }
-
-      if (stage === 'resistance' && hasLamps && job.raw_tifs && job.raster_extent) {
-        ctx.onLog?.('info', `Computing lamp irradiance in browser via WebAssembly (${lampFeatures.length} lamp feature(s))...`);
-        ctx.onProgress?.({ step: 'submit', fraction: 0.95, label: 'Computing lamp resistance...' });
+      if (stage === 'resistance' && job.raw_tifs && job.raster_extent) {
+        ctx.onLog?.('info', `Computing raster layers in browser via WebAssembly (${lampFeatures.length} lamp feature(s))...`);
+        ctx.onProgress?.({ step: 'submit', fraction: 0.95, label: 'Computing resistance...' });
 
         try {
           const extent = job.raster_extent;
-          const { totalRes, lampRes, extractedCount } = await computeLampsWasm(
+          const { totalRes, lampRes, coverageMask, extractedCount } = await computeLampsWasm(
             lampFeatures, job.raw_tifs, extent, params,
           );
-          layers.push(...buildLampResultLayers(totalRes, lampRes, extent));
+          layers.push(...(await buildLampResultLayers(totalRes, lampRes, coverageMask, extent)));
           storedTotalRes = { data: totalRes, extent };
-          ctx.onLog?.('info', `Lamp irradiance computed browser-side (${extractedCount} point(s)). Total resistance ready for Circuitscape.`);
+          if (lampFeatures.length > 0) {
+            ctx.onLog?.('info', `Lamp irradiance computed browser-side (${extractedCount} point(s)). Total resistance ready for Circuitscape.`);
+          } else {
+            ctx.onLog?.('info', 'Total resistance computed browser-side. Ready for Circuitscape.');
+          }
         } catch (wasmErr) {
           const msg = wasmErr instanceof Error ? wasmErr.message : String(wasmErr);
-          ctx.onLog?.('error', `Lamp resistance computation failed: ${msg}`);
-          throw new Error(`Lamp resistance could not be computed in your browser: ${msg}`);
+          ctx.onLog?.('error', `Raster computation failed: ${msg}`);
+          throw new Error(`Raster computation could not be completed in your browser: ${msg}`);
         }
       }
 

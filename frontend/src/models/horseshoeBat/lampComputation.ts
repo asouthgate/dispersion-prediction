@@ -2,7 +2,7 @@ import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
 import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
 import { ensureWasm, irradianceRun, irradianceToResistance, irradianceCombine } from '../../wasm/irradianceCompute';
 import { fetchRaster } from '../../wasm/geotiffFetch';
-import { rasterToPngDataUrl } from '../../wasm/rasterize';
+import { rasterToPngBlobUrl } from '../../wasm/rasterize';
 import type { JobStatus } from './pipelineClient';
 
 export interface StoredTotalRes {
@@ -60,48 +60,59 @@ export async function computeLampsWasm(
   rawTifs: Record<string, string>,
   extent: Extent,
   params: Record<string, number>,
-): Promise<{ totalRes: Float32Array; lampRes: Float32Array; extractedCount: number }> {
+): Promise<{ totalRes: Float32Array; lampRes: Float32Array; coverageMask: Uint8Array; extractedCount: number }> {
   await ensureWasm();
 
-  const lampCoords = extractLampCoords(lampFeatures, extent);
-  if (!lampCoords) {
-    const zero = new Float32Array(extent.m * extent.n);
-    return { totalRes: zero, lampRes: zero, extractedCount: 0 };
-  }
+  const size = extent.m * extent.n;
 
-  const keys = ['soft_surf', 'hard_surf', 'dtm', 'road_res', 'river_res', 'landscape_res', 'linear_res'] as const;
+  const keys = ['dtm', 'soft_surf', 'hard_surf', 'road_res', 'river_res', 'landscape_res', 'linear_res'] as const;
   const rasters: Record<string, Float32Array> = {};
 
   const results = await Promise.all(
     keys.map(async (k) => {
       const url = rawTifs[k];
-      if (!url) return { k, data: new Float32Array(extent.m * extent.n) };
+      if (!url) return { k, data: new Float32Array(size) };
       const d = await fetchRaster(url);
       return { k, data: d.data };
     }),
   );
   for (const { k, data } of results) rasters[k] = data;
 
+  const coverageMask = new Uint8Array(size);
+  const nodataThreshold = -1e20;
+  let masked = 0;
+  for (let i = 0; i < size; i++) {
+    coverageMask[i] = Number.isFinite(rasters['dtm'][i]) && rasters['dtm'][i] > nodataThreshold ? 1 : 0;
+    if (coverageMask[i] === 0) masked++;
+  }
+
   const genericUrl = rawTifs['generic_res'];
   let genericData: Float32Array;
   if (genericUrl) {
     genericData = (await fetchRaster(genericUrl)).data;
   } else {
-    genericData = new Float32Array(extent.m * extent.n);
+    genericData = new Float32Array(size);
   }
 
-  const cutoff = params.lamp_ext ?? 100;
+  const lampCoords = extractLampCoords(lampFeatures, extent);
+  let lampRes: Float32Array;
+  let extractedCount = 0;
 
-  const irradiance = irradianceRun(
-    lampCoords,
-    rasters['soft_surf'], rasters['hard_surf'], rasters['dtm'],
-    extent.m, extent.n, extent.pixw, cutoff, 0, 0.5,
-  );
-
-  const lampRes = irradianceToResistance(
-    irradiance, extent.m, extent.n,
-    params.lamp_resmax ?? 1e8, params.lamp_xmax ?? 1,
-  );
+  if (lampCoords) {
+    extractedCount = lampCoords.length / 3;
+    const cutoff = params.lamp_ext ?? 100;
+    const irradiance = irradianceRun(
+      lampCoords,
+      rasters['soft_surf'], rasters['hard_surf'], rasters['dtm'],
+      extent.m, extent.n, extent.pixw, cutoff, 0, 0.5,
+    );
+    lampRes = irradianceToResistance(
+      irradiance, extent.m, extent.n,
+      params.lamp_resmax ?? 1e8, params.lamp_xmax ?? 1,
+    );
+  } else {
+    lampRes = new Float32Array(size);
+  }
 
   const totalRes = irradianceCombine(
     lampRes,
@@ -110,49 +121,63 @@ export async function computeLampsWasm(
     extent.m, extent.n,
   );
 
-  return { totalRes, lampRes, extractedCount: lampCoords.length / 3 };
+  return { totalRes, lampRes, coverageMask, extractedCount };
 }
 
-export function buildLampResultLayers(
+function applyMask(data: Float32Array, mask: Uint8Array): Float32Array {
+  const result = new Float32Array(data);
+  for (let i = 0; i < result.length; i++) {
+    if (mask[i] === 0) result[i] = NaN;
+  }
+  return result;
+}
+
+export async function buildLampResultLayers(
   totalRes: Float32Array,
   lampRes: Float32Array,
+  coverageMask: Uint8Array,
   extent: Extent,
-): ResultLayerEntry[] {
+): Promise<ResultLayerEntry[]> {
   const bngExtent = [extent.xmin, extent.ymin, extent.xmax, extent.ymax] as const;
   const bounds = bngBoundsToWgs84(bngExtent);
+
+  const maskedLampRes = applyMask(lampRes, coverageMask);
+  const maskedTotalRes = applyMask(totalRes, coverageMask);
 
   const layers: ResultLayerEntry[] = [];
 
   layers.push({
     id: 'lamp_res',
     name: 'Lamp Resistance',
-    envelope: { kind: 'image', url: rasterToPngDataUrl(lampRes, extent.m, extent.n), bounds },
+    envelope: { kind: 'image', url: await rasterToPngBlobUrl(maskedLampRes, extent.m, extent.n), bounds },
   });
 
-  const logLampRes = new Float32Array(lampRes);
+  const logLampRes = new Float32Array(maskedLampRes);
   for (let i = 0; i < logLampRes.length; i++) {
-    logLampRes[i] = logLampRes[i] > 0 ? Math.log(logLampRes[i]) : 0;
+    logLampRes[i] = Number.isNaN(logLampRes[i]) ? NaN
+      : (logLampRes[i] > 0 ? Math.log(logLampRes[i]) : 0);
   }
   layers.push({
     id: 'log_lamp_res',
     name: 'Log Lamp Resistance',
-    envelope: { kind: 'image', url: rasterToPngDataUrl(logLampRes, extent.m, extent.n), bounds },
+    envelope: { kind: 'image', url: await rasterToPngBlobUrl(logLampRes, extent.m, extent.n), bounds },
   });
 
   layers.push({
     id: 'total_res',
     name: 'Total Resistance',
-    envelope: { kind: 'image', url: rasterToPngDataUrl(totalRes, extent.m, extent.n), bounds },
+    envelope: { kind: 'image', url: await rasterToPngBlobUrl(maskedTotalRes, extent.m, extent.n), bounds },
   });
 
-  const logTotalRes = new Float32Array(totalRes);
+  const logTotalRes = new Float32Array(maskedTotalRes);
   for (let i = 0; i < logTotalRes.length; i++) {
-    logTotalRes[i] = logTotalRes[i] > 0 ? Math.log(logTotalRes[i]) : 0;
+    logTotalRes[i] = Number.isNaN(logTotalRes[i]) ? NaN
+      : (logTotalRes[i] > 0 ? Math.log(logTotalRes[i]) : 0);
   }
   layers.push({
     id: 'log_total_res',
     name: 'Log Total Resistance',
-    envelope: { kind: 'image', url: rasterToPngDataUrl(logTotalRes, extent.m, extent.n), bounds },
+    envelope: { kind: 'image', url: await rasterToPngBlobUrl(logTotalRes, extent.m, extent.n), bounds },
   });
 
   return layers;
