@@ -40,7 +40,7 @@ interface JobStatus {
   progress_label: string;
   error: string | null;
   warnings: string[];
-  layers?: { id: string; url: string; bounds: [number, number, number, number] }[];
+  layers?: { id: string; name: string; url: string; bounds: [number, number, number, number] }[];
 }
 
 function selectRoost(features: ReadonlyArray<DataFeature>): RoostInfo | null {
@@ -172,7 +172,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
 
         const layers: ResultLayerEntry[] = (job.layers ?? []).map((l) => ({
           id: l.id,
-          name: (l as { name?: string }).name ?? l.id,
+          name: l.name,
           envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
         }));
 

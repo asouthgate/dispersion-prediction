@@ -236,12 +236,15 @@ def _run_coverage(
     layers = []
     for layer in layers_raw:
         tif_path = layer["tif_path"]
-        name = layer["id"]
-        png_path = os.path.join(work_dir, "images", f"{name}.png")
-        tif_to_png(tif_path, png_path, bounds_wgs84, colormap=colormaps.get(name, "magma"))
+        layer_id = layer["id"]
+        name = layer["name"]
+        png_path = os.path.join(work_dir, "images", f"{layer_id}.png")
+        tif_to_png(tif_path, png_path, bounds_wgs84, colormap=colormaps.get(layer_id, "magma"),
+                   circular_mask=False)
         layers.append({
-            "id": name.upper(),
-            "url": f"/api/rasters/{task.request.id}/{name}.png",
+            "id": layer_id,
+            "name": name,
+            "url": f"/api/rasters/{task.request.id}/{layer_id}.png",
             "bounds": list(bounds_wgs84),
         })
 
@@ -449,7 +452,8 @@ def _run_r_pipeline(
         colormap = "plasma" if "current" in layer["id"] else "magma"
         try:
             bounds = get_bounds_for_tif(tif_path)
-            tif_to_png(tif_path, png_path, bounds, colormap=colormap)
+            tif_to_png(tif_path, png_path, bounds, colormap=colormap,
+                       circular_mask=("current" in layer["id"]))
         except Exception as e:
             logger.warning("Pre-render failed for %s: %s", layer["id"], e)
 

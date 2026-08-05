@@ -322,14 +322,23 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
 
     logger::log_info("Getting total resistance")
 
+    # Mask raster-dependent components where coverage rasters are missing.
+    # landscapeRes depends on DSM, DTM and LCM.
+    # linearRes and lampRes depend on DSM and DTM (via calc_surfs / prep_lidar_rasters).
+    # roadRes and riverRes are pure-vector and do not depend on coverage rasters.
+    dsmna <- is.na(raster::values(r_dsm))
+    dtmna <- is.na(raster::values(r_dtm))
+    lcmna <- is.na(raster::values(r_lcm))
+    landscapeRes[dsmna | dtmna | lcmna] <- NA
+    linearRes[dsmna | dtmna] <- NA
+    lampRes[dsmna | dtmna] <- NA
+
     totalRes_unnorm <- lampRes + roadRes + riverRes + landscapeRes + linearRes + genericRes
     # Make sure the minimum non-NA is 1
     totalRes_unnorm <- totalRes_unnorm + 1
 
     # Mask it if there's any missing data in dsm/dtm
     logger::log_info("Masking resistance if NAs present")
-    dsmna <- is.na(raster::values(r_dsm))
-    dtmna <- is.na(raster::values(r_dtm))
     totalRes_unnorm[dsmna] <- NA
     totalRes_unnorm[dtmna] <- NA
     print(length(dsmna))
