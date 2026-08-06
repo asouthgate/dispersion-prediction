@@ -353,3 +353,120 @@ def fetch_resistance_inputs(work_dir: str):
         conn.close()
 
     logger.info("Data fetch complete for %s", work_dir)
+
+
+def fetch_landscape_inputs(work_dir: str):
+    """Fetch DTM/DSM/LCM rasters and building vectors for landscape-only computation.
+
+    Fetches coverage rasters and rasterizes building vectors from PostGIS.
+    Does NOT fetch road/river vectors — those come from browser-side drawn features.
+    """
+    cfg = _get_db_config()
+    if cfg is None:
+        logger.warning("No ~/.bats.cfg found — skipping DB fetch")
+        return
+
+    inputs_path = os.path.join(work_dir, "inputs.json")
+    with open(inputs_path) as f:
+        inputs = json.load(f)
+
+    roost = inputs["roost"]
+    params = inputs.get("params", {})
+
+    easting = roost["easting"]
+    northing = roost["northing"]
+    radius = roost["radius"]
+    resolution = params.get("resolution", 10)
+
+    xmin = easting - radius
+    xmax = easting + radius
+    ymin = northing - radius
+    ymax = northing + radius
+
+    ncols = int((xmax - xmin) / resolution)
+    nrows = int((ymax - ymin) / resolution)
+    pixw = resolution
+
+    logger.info(
+        "Landscape fetch: extent=[%.2f,%.2f,%.2f,%.2f] %dx%d, roost=[%.2f,%.2f], radius=%.0f",
+        xmin, ymin, xmax, ymax, ncols, nrows, easting, northing, radius,
+    )
+
+    conn = _connect(cfg)
+    ref_transform = None
+
+    try:
+        for name in ["dtm", "dsm", "lcm"]:
+            table = cfg.get(f"{name}_table", name)
+            logger.info("Fetching %s raster from %s...", name, table)
+            tiff_bytes = _fetch_raster_as_tiff(
+                conn, table, xmin, ymin, xmax, ymax, ncols, nrows
+            )
+
+            out_path = os.path.join(work_dir, f"{name}.tif")
+
+            if tiff_bytes is None:
+                logger.warning("%s returned no data, writing zeros", name)
+                arr = np.zeros((nrows, ncols), dtype=np.float32)
+                if ref_transform is None:
+                    ref_transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
+                with rasterio.open(
+                    out_path, "w", driver="GTiff", height=nrows, width=ncols,
+                    count=1, dtype=np.float32, crs="EPSG:27700",
+                    transform=ref_transform, nodata=-9999.0,
+                ) as dst:
+                    dst.write(arr, 1)
+                logger.info(
+                    "Wrote %s.tif (%dx%d) — zeros (no data returned), bounds=[%.2f,%.2f,%.2f,%.2f]",
+                    name, ncols, nrows,
+                    ref_transform.c, ref_transform.f - nrows * abs(ref_transform.e),
+                    ref_transform.c + ncols * abs(ref_transform.a), ref_transform.f,
+                )
+            else:
+                with open(out_path, "wb") as f:
+                    f.write(tiff_bytes)
+
+                with rasterio.open(out_path) as src:
+                    logger.info(
+                        "Wrote %s.tif (%dx%d), bounds=[%.2f,%.2f,%.2f,%.2f]",
+                        name, src.width, src.height,
+                        src.bounds.left, src.bounds.bottom,
+                        src.bounds.right, src.bounds.top,
+                    )
+                    if ref_transform is None and name == "dtm":
+                        ref_transform = src.transform
+
+        if ref_transform is None:
+            ref_transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
+
+        for name in ["dsm", "lcm"]:
+            path = os.path.join(work_dir, f"{name}.tif")
+            if os.path.exists(path):
+                _resample_to_grid(path, ref_transform, ncols, nrows)
+
+        _write_tiff_sidecar(work_dir, ref_transform.c, ref_transform.f, abs(ref_transform.a), nrows, ncols)
+
+        buildings_table = cfg.get("buildings_table")
+        if buildings_table:
+            logger.info("Fetching building vectors from %s...", buildings_table)
+            gj = _fetch_vector_as_geojson(
+                conn, buildings_table, "buildings", xmin, ymin, xmax, ymax
+            )
+            if gj:
+                path = os.path.join(work_dir, "buildings.geojson")
+                with open(path, "w") as f:
+                    f.write(gj)
+                _merge_drawn_features(work_dir, [path])
+                logger.info("Wrote buildings.geojson (%d bytes)", len(gj))
+            else:
+                logger.warning("No building vectors found")
+
+        generic_path = os.path.join(work_dir, "generic_resistance.geojson")
+        with open(generic_path, "w") as f:
+            json.dump({"type": "FeatureCollection", "features": []}, f)
+        _merge_drawn_features(work_dir, [generic_path])
+
+    finally:
+        conn.close()
+
+    logger.info("Landscape data fetch complete for %s", work_dir)

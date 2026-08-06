@@ -1,6 +1,6 @@
 import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
 import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
-import { ensureResistanceWasm, runPipeline, rasterizeGeojson, type ResistanceParams } from '../../wasm/resistanceCompute';
+import { ensureResistanceWasm, runPipelineBrowser, rasterizeGeojson, type ResistanceParams } from '../../wasm/resistanceCompute';
 import { fetchRaster } from '../../wasm/geotiffFetch';
 import { rasterToPngBlobUrl } from '../../wasm/rasterize';
 import { fetchWithAuth } from '../../auth';
@@ -18,6 +18,9 @@ export interface StoredTotalRes {
     ymax: number;
   };
 }
+
+export type LogFn = (level: 'info' | 'warning' | 'error', message: string) => void;
+export type ProgressFn = (fraction: number, label: string) => void;
 
 type Extent = NonNullable<JobStatus['raster_extent']>;
 
@@ -88,12 +91,14 @@ export async function computeLampsWasm(
   rawGeojson: Record<string, string> | undefined,
   extent: Extent,
   params: Record<string, number>,
+  onProgress?: ProgressFn,
 ): Promise<{ totalRes: Float32Array; lampRes: Float32Array; coverageMask: Uint8Array; extractedCount: number }> {
   await ensureResistanceWasm();
-
   const size = extent.m * extent.n;
 
-  const rasterKeys = ['dtm', 'dsm', 'lcm'] as const;
+  onProgress?.(0.05, 'Fetching DTM/DSM/Landscape resistance...');
+
+  const rasterKeys = ['dtm', 'dsm', 'landscape_res'] as const;
   const rasters: Record<string, Float32Array> = {};
 
   const rasterResults = await Promise.all(
@@ -106,16 +111,12 @@ export async function computeLampsWasm(
   );
   for (const { k, data } of rasterResults) rasters[k] = data;
 
-  console.debug('[computeLampsWasm] extent:', JSON.stringify(extent));
-  console.debug('[computeLampsWasm] raster dims:', rasters['dtm'].length, 'expected:', extent.m * extent.n);
-  console.debug('[computeLampsWasm] raster pixels valid (dtm):', rasters['dtm'].filter(v => Number.isFinite(v)).length);
-  console.debug('[computeLampsWasm] rawTifs keys:', Object.keys(rawTifs));
-  console.debug('[computeLampsWasm] rawGeojson keys:', rawGeojson ? Object.keys(rawGeojson) : []);
-
   const coverageMask = new Uint8Array(size);
   for (let i = 0; i < size; i++) {
     coverageMask[i] = Number.isFinite(rasters['dtm'][i]) ? 1 : 0;
   }
+
+  onProgress?.(0.15, 'Fetching vector features...');
 
   const geojsonLayers: Record<string, string> = {};
   const gjNames = ['roads', 'rivers', 'buildings', 'generic_resistance'] as const;
@@ -131,7 +132,7 @@ export async function computeLampsWasm(
     );
   }
 
-  console.debug('[computeLampsWasm] geojson fetched:', Object.keys(geojsonLayers).filter(k => geojsonLayers[k] && geojsonLayers[k].length > 100));
+  onProgress?.(0.25, 'Rasterizing road features...');
 
   const emptyGeojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
   const zeroRaster = new Float32Array(size);
@@ -143,12 +144,16 @@ export async function computeLampsWasm(
     extent.xmin, extent.ymax, extent.pixw,
   ).resistanceMap;
 
+  onProgress?.(0.35, 'Rasterizing river features...');
+
   const riverBinary = rasterizeGeojson(
     zeroRaster, extent.m, extent.n,
     geojsonLayers['rivers'] ?? emptyGeojson,
     JSON.stringify({ rivers: { resistance: 1.0, width: 0.0 } }),
     extent.xmin, extent.ymax, extent.pixw,
   ).resistanceMap;
+
+  onProgress?.(0.45, 'Rasterizing building features...');
 
   const buildingMask = rasterizeGeojson(
     zeroRaster, extent.m, extent.n,
@@ -157,6 +162,8 @@ export async function computeLampsWasm(
     extent.xmin, extent.ymax, extent.pixw,
   ).resistanceMap;
 
+  onProgress?.(0.55, 'Rasterizing generic resistance...');
+
   const genericRes = rasterizeGeojson(
     zeroRaster, extent.m, extent.n,
     geojsonLayers['generic_resistance'] ?? emptyGeojson,
@@ -164,10 +171,7 @@ export async function computeLampsWasm(
     extent.xmin, extent.ymax, extent.pixw,
   ).resistanceMap;
 
-  console.debug('[computeLampsWasm] roadBinary non-zero:', roadBinary.filter(v => v > 0).length);
-  console.debug('[computeLampsWasm] riverBinary non-zero:', riverBinary.filter(v => v > 0).length);
-  console.debug('[computeLampsWasm] buildingMask non-zero:', buildingMask.filter(v => v > 0).length);
-  console.debug('[computeLampsWasm] genericRes non-zero:', genericRes.filter(v => v > 0).length);
+  onProgress?.(0.60, 'Extracting lamp coordinates...');
 
   const lampCoords = extractLampCoords(lampFeatures, extent);
   let lamps: Float32Array;
@@ -202,30 +206,20 @@ export async function computeLampsWasm(
     ncols: extent.n,
   };
 
-  const pipelineResult = runPipeline(
+  onProgress?.(0.70, 'Computing road resistance...');
+  const pipelineResult = runPipelineBrowser(
     roadBinary,
     riverBinary,
     buildingMask,
-    rasters['lcm'],
     rasters['dtm'],
     rasters['dsm'],
     genericRes,
     lamps,
+    rasters['landscape_res'],
     rastParams,
   );
 
-  console.debug('[computeLampsWasm] pipeline result:', {
-    totalRes: { len: pipelineResult.totalRes.length, nonZeroFinite: pipelineResult.totalRes.filter(v => v > 0 && Number.isFinite(v)).length },
-    lampRes: { len: pipelineResult.lampRes.length, nonZeroFinite: pipelineResult.lampRes.filter(v => v > 0 && Number.isFinite(v)).length },
-    roadRes: { nonZeroFinite: pipelineResult.roadRes.filter(v => v > 0 && Number.isFinite(v)).length },
-    riverRes: { nonZeroFinite: pipelineResult.riverRes.filter(v => v > 0 && Number.isFinite(v)).length },
-    landscapeRes: { nonZeroFinite: pipelineResult.landscapeRes.filter(v => v > 0 && Number.isFinite(v)).length },
-    linearRes: { nonZeroFinite: pipelineResult.linearRes.filter(v => v > 0 && Number.isFinite(v)).length },
-    genericRes: { nonZeroFinite: pipelineResult.genericRes.filter(v => v > 0 && Number.isFinite(v)).length },
-    softSurf: { nonZeroFinite: pipelineResult.softSurf.filter(v => v > 0 && Number.isFinite(v)).length },
-    hardSurf: { nonZeroFinite: pipelineResult.hardSurf.filter(v => v > 0 && Number.isFinite(v)).length },
-    nrows: pipelineResult.nrows, ncols: pipelineResult.ncols,
-  });
+  onProgress?.(0.95, 'Computing result layers...');
 
   return {
     totalRes: pipelineResult.totalRes,

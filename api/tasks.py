@@ -405,9 +405,10 @@ def _run_r_pipeline(
         binary_path = _shutil.which(binary_map[stage])
         if not binary_path:
             raise RuntimeError(f"Binary not found: {binary_map[stage]}")
-        logger.info("Fetching DB data for resistance pipeline...")
-        fetch_resistance_inputs(work_dir)
-        cmd = [binary_path, work_dir]
+        logger.info("Fetching DB data for landscape resistance...")
+        from services.data_fetch import fetch_landscape_inputs
+        fetch_landscape_inputs(work_dir)
+        cmd = [binary_path, work_dir, "--stage", "landscape"]
         cwd = work_dir
         env = os.environ.copy()
     else:
@@ -530,6 +531,10 @@ def _run_r_pipeline(
         raise RuntimeError(f"Pipeline failed (rc={proc.returncode}): {stderr_tail[:300]}")
 
     if use_binary:
+        lcm_path = os.path.join(work_dir, "lcm.tif")
+        if os.path.exists(lcm_path):
+            os.unlink(lcm_path)
+            logger.info("Removed lcm.tif — LCM stays server-side")
         _apply_georeferencing(work_dir)
 
     layers_raw = collect_results(work_dir)

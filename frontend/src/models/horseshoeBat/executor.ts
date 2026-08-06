@@ -133,13 +133,16 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         }));
 
       if (stage === 'resistance' && job.raw_tifs && job.raster_extent) {
-        ctx.onLog?.('info', `Computing raster layers in browser via WebAssembly (${lampFeatures.length} lamp feature(s))...`);
-        ctx.onProgress?.({ step: 'submit', fraction: 0.95, label: 'Computing resistance...' });
+        ctx.onLog?.('info', `Computing resistance layers in browser via WebAssembly...`);
 
         try {
           const extent = job.raster_extent;
           const { totalRes, lampRes, coverageMask, extractedCount } = await computeLampsWasm(
             lampFeatures, job.raw_tifs, job.raw_geojson, extent, params,
+            (fraction, label) => {
+              ctx.onProgress?.({ step: 'submit', fraction: 0.95 + fraction * 0.05, label });
+              ctx.onLog?.('info', label);
+            },
           );
           layers.push(...(await buildLampResultLayers(totalRes, lampRes, coverageMask, extent)));
           storedTotalRes = { data: totalRes, extent };
