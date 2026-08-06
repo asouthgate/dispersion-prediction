@@ -3,11 +3,13 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake \
     curl \
     gcc \
     g++ \
     gettext-base \
     gfortran \
+    libabsl-dev \
     libgdal-dev \
     libgeos-dev \
     libproj-dev \
@@ -28,16 +30,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     slurmd \
     slurmctld \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-  RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake \
-    libabsl-dev
-
-# RUN echo 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest"))' >> /etc/R/Rprofile.site \
-#     && Rscript -e 'install.packages(c( \
-#   "raster","terra","sp","sf","rpostgis","DBI","RPostgres", \
-#   "R6","logger","glue","stringr","configr","Rcpp" \
-# ))'
 
 RUN echo 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/jammy/latest"))' >> /etc/R/Rprofile.site
 COPY r-pkg/.Rprofile.docker /app/.Rprofile
@@ -71,10 +63,12 @@ COPY docker/batapp/bats.cfg.template /opt/bats.cfg.template
 
 COPY test/ /app/test/
 
-COPY frontend/wasm-connectivity/ /app/frontend/wasm-connectivity/
-COPY resistance-cli/ /app/resistance-cli/
-WORKDIR /app/resistance-cli
-RUN cargo build --release && cp target/release/resistance-pipeline /usr/local/bin/
+COPY frontend/wasm-connectivity/src/ /app/frontend/wasm-connectivity/src/
+COPY frontend/wasm-connectivity/Cargo.toml /app/frontend/wasm-connectivity/Cargo.toml
+COPY frontend/wasm-connectivity/Cargo.lock /app/frontend/wasm-connectivity/Cargo.lock
+WORKDIR /app/frontend/wasm-connectivity
+RUN cargo build --release --features bin --bin resistance-pipeline \
+    && cp target/release/resistance-pipeline /usr/local/bin/
 WORKDIR /app
 
 

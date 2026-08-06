@@ -110,6 +110,15 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         onProgress: ctx.onProgress,
       });
 
+      console.debug('[executor] job result:', {
+        status: job.status,
+        layerIds: job.layers?.map(l => l.id),
+        layerCount: job.layers?.length,
+        rawTifsKeys: job.raw_tifs ? Object.keys(job.raw_tifs) : [],
+        rawGeojsonKeys: job.raw_geojson ? Object.keys(job.raw_geojson) : [],
+        rasterExtent: job.raster_extent,
+      });
+
       if (job.status === 'cancelled') {
         return { layers: [] as ResultLayerEntry[], summary: { status: 'cancelled' } };
       }
@@ -130,7 +139,7 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         try {
           const extent = job.raster_extent;
           const { totalRes, lampRes, coverageMask, extractedCount } = await computeLampsWasm(
-            lampFeatures, job.raw_tifs, extent, params,
+            lampFeatures, job.raw_tifs, job.raw_geojson, extent, params,
           );
           layers.push(...(await buildLampResultLayers(totalRes, lampRes, coverageMask, extent)));
           storedTotalRes = { data: totalRes, extent };

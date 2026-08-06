@@ -20,12 +20,10 @@ from celery.exceptions import SoftTimeLimitExceeded
 from pyproj import Transformer
 
 from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL, RES_CACHE_TTL_SECONDS
-from services.r_bridge import wgs84_to_bng
-from services.raster_service import tif_to_png
 from services.analytics import emit_pipeline_complete
-from services.r_bridge import _write_input_files as wif, collect_results, collect_raster_info
-from services.raster_service import tif_to_png, get_bounds_for_tif
-from services.raster_service import get_bounds_for_tif
+from services.data_fetch import fetch_resistance_inputs
+from services.r_bridge import _write_input_files as wif, collect_results, collect_raster_info, wgs84_to_bng
+from services.raster_service import get_bounds_for_tif, tif_to_png
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +292,89 @@ def _sanitize_error(message: str) -> str:
     return "An internal error occurred. Please try again or contact support."
 
 
+def _apply_georeferencing(work_dir: str) -> None:
+    """Apply georeferencing from grid_info.json to TIFFs that lack it.
+
+    The Rust binary writes GeoTIFFs via the raw `tiff` crate which does not
+    embed geo-keys.  We read grid_info.json (written by data_fetch.py) and
+    rewrite every .tif in work_dir that has a default (0,0)-origin transform
+    with the correct georeferencing.
+    """
+    import os as _os
+
+    gi_path = _os.path.join(work_dir, "grid_info.json")
+    if not _os.path.exists(gi_path):
+        logger.debug("No grid_info.json in %s — skipping georeferencing fix", work_dir)
+        return
+
+    import json as _json
+
+    with open(gi_path) as f:
+        gi = _json.load(f)
+
+    import rasterio
+    from rasterio.transform import from_bounds
+
+    ref_transform = from_bounds(
+        gi["xmin"],
+        gi["ymax"] - gi["nrows"] * gi["pixw"],
+        gi["xmin"] + gi["ncols"] * gi["pixw"],
+        gi["ymax"],
+        gi["ncols"],
+        gi["nrows"],
+    )
+
+    fixed = 0
+    for fname in sorted(_os.listdir(work_dir)):
+        if not fname.endswith(".tif"):
+            continue
+        path = _os.path.join(work_dir, fname)
+        try:
+            with rasterio.open(path) as src:
+                if src.transform.c != 0.0 or src.transform.f != 0.0:
+                    continue
+                data = src.read(1)
+                dtype = src.dtypes[0]
+        except Exception:
+            continue
+
+        tmp_path = path + ".geofix"
+        try:
+            with rasterio.open(
+                tmp_path,
+                "w",
+                driver="GTiff",
+                height=gi["nrows"],
+                width=gi["ncols"],
+                count=1,
+                dtype=dtype,
+                crs="EPSG:27700",
+                transform=ref_transform,
+                nodata=-9999.0,
+            ) as dst:
+                dst.write(data, 1)
+            _os.replace(tmp_path, path)
+            fixed += 1
+        except Exception:
+            try:
+                _os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
+    if fixed:
+        logger.info(
+            "Applied georeferencing to %d GeoTIFF(s) in %s (grid %dx%d, xmin=%.2f, ymax=%.2f, pixw=%.2f)",
+            fixed,
+            work_dir,
+            gi["nrows"],
+            gi["ncols"],
+            gi["xmin"],
+            gi["ymax"],
+            gi["pixw"],
+        )
+
+
 def _run_r_pipeline(
     task,
     work_dir: str,
@@ -324,7 +405,6 @@ def _run_r_pipeline(
         binary_path = _shutil.which(binary_map[stage])
         if not binary_path:
             raise RuntimeError(f"Binary not found: {binary_map[stage]}")
-        from services.data_fetch import fetch_resistance_inputs
         logger.info("Fetching DB data for resistance pipeline...")
         fetch_resistance_inputs(work_dir)
         cmd = [binary_path, work_dir]
@@ -448,6 +528,9 @@ def _run_r_pipeline(
         stderr_tail = (stderr or "")[-500:] or "(no output)"
         logger.error("Pipeline failed (rc=%d): %s", proc.returncode, stderr_tail)
         raise RuntimeError(f"Pipeline failed (rc={proc.returncode}): {stderr_tail[:300]}")
+
+    if use_binary:
+        _apply_georeferencing(work_dir)
 
     layers_raw = collect_results(work_dir)
     if not layers_raw:
@@ -590,6 +673,18 @@ def run_pipeline_task(
                     lid = layer["id"]
                     raw_tifs[lid] = f"/api/rasters/{self.request.id}/raw/{lid}.tif"
                 raster_extent = collect_raster_info(work_dir)
+
+                raw_geojson = {}
+                for gj_name in ("roads", "rivers", "buildings", "generic_resistance"):
+                    gj_path = os.path.join(work_dir, f"{gj_name}.geojson")
+                    if os.path.exists(gj_path):
+                        raw_geojson[gj_name] = f"/api/rasters/{self.request.id}/raw/{gj_name}.geojson"
+
+                logger.info(
+                    "Job %s: raster_extent=%s, raw_tifs=%s, raw_geojson=%s",
+                    self.request.id, raster_extent,
+                    list(raw_tifs.keys()), list(raw_geojson.keys()),
+                )
             elif stage == "current":
                 if not roost:
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
@@ -617,6 +712,7 @@ def run_pipeline_task(
             if stage == "resistance":
                 result["raw_tifs"] = raw_tifs
                 result["raster_extent"] = raster_extent
+                result["raw_geojson"] = raw_geojson
             return result
 
         except SoftTimeLimitExceeded:

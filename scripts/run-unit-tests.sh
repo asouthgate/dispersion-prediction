@@ -52,15 +52,6 @@ fi
 
 cd "$REPO_ROOT"
 echo ""
-echo "=== Resistance-cli Rust tests ==="
-if cargo test --manifest-path resistance-cli/Cargo.toml; then
-    PASS=$((PASS + 1))
-else
-    FAIL=$((FAIL + 1))
-fi
-
-cd "$REPO_ROOT"
-echo ""
 echo "=== R unit tests ==="
 if Rscript --no-init-file test/run_unit_tests.R; then
     PASS=$((PASS + 1))

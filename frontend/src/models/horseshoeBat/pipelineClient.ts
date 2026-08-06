@@ -12,6 +12,7 @@ export interface JobStatus {
   warnings: string[];
   layers?: { id: string; name: string; url: string; bounds: [number, number, number, number] }[];
   raw_tifs?: Record<string, string>;
+  raw_geojson?: Record<string, string>;
   raster_extent?: {
     m: number;
     n: number;

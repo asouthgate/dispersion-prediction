@@ -115,6 +115,23 @@ async def get_raw_tif(task_id: str, layer: str, _token: str = Depends(require_au
     )
 
 
+@router.get("/{task_id}/raw/{layer}.geojson")
+async def get_raw_geojson(task_id: str, layer: str, _token: str = Depends(require_auth)):
+    """Serve a raw GeoJSON file for client-side rasterization."""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', layer):
+        raise HTTPException(status_code=400, detail="Invalid layer name")
+    h = await _resolve_task_id(task_id)
+    job_dir = _get_job_dir(h)
+    gj_path = os.path.join(job_dir, f"{layer}.geojson")
+    if not os.path.exists(gj_path):
+        raise HTTPException(status_code=404, detail=f"Raw GeoJSON {layer} not found")
+    return FileResponse(
+        gj_path,
+        media_type="application/geo+json",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @router.get("/{task_id}/download")
 async def download_results(task_id: str, _token: str = Depends(require_auth)):
     """Download all result rasters as a ZIP file."""

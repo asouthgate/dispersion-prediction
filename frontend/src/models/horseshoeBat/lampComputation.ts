@@ -1,9 +1,9 @@
 import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
 import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
-import { ensureResistanceWasm } from '../../wasm/resistanceCompute';
-import { compute_lamp_and_total } from '../../../wasm-connectivity/lib/wasm_connect.js';
+import { ensureResistanceWasm, runPipeline, rasterizeGeojson, type ResistanceParams } from '../../wasm/resistanceCompute';
 import { fetchRaster } from '../../wasm/geotiffFetch';
 import { rasterToPngBlobUrl } from '../../wasm/rasterize';
+import { fetchWithAuth } from '../../auth';
 import type { JobStatus } from './pipelineClient';
 
 export interface StoredTotalRes {
@@ -38,10 +38,10 @@ function bngBoundsToWgs84(
   return [west, south, east, north];
 }
 
-function f32ToF64(arr: Float32Array): Float64Array {
-  const out = new Float64Array(arr.length);
-  for (let i = 0; i < arr.length; i++) out[i] = arr[i];
-  return out;
+async function fetchGeojson(url: string): Promise<string> {
+  const res = await fetchWithAuth(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  return res.text();
 }
 
 export function extractLampCoords(features: DataFeature[], extent: Extent): Float32Array | null {
@@ -85,6 +85,7 @@ export function extractLampCoords(features: DataFeature[], extent: Extent): Floa
 export async function computeLampsWasm(
   lampFeatures: DataFeature[],
   rawTifs: Record<string, string>,
+  rawGeojson: Record<string, string> | undefined,
   extent: Extent,
   params: Record<string, number>,
 ): Promise<{ totalRes: Float32Array; lampRes: Float32Array; coverageMask: Uint8Array; extractedCount: number }> {
@@ -92,65 +93,143 @@ export async function computeLampsWasm(
 
   const size = extent.m * extent.n;
 
-  const keys = ['dtm', 'soft_surf', 'hard_surf', 'road_res', 'river_res', 'landscape_res', 'linear_res'] as const;
+  const rasterKeys = ['dtm', 'dsm', 'lcm'] as const;
   const rasters: Record<string, Float32Array> = {};
 
-  const results = await Promise.all(
-    keys.map(async (k) => {
+  const rasterResults = await Promise.all(
+    rasterKeys.map(async (k) => {
       const url = rawTifs[k];
       if (!url) return { k, data: new Float32Array(size) };
       const d = await fetchRaster(url);
       return { k, data: d.data };
     }),
   );
-  for (const { k, data } of results) rasters[k] = data;
+  for (const { k, data } of rasterResults) rasters[k] = data;
+
+  console.debug('[computeLampsWasm] extent:', JSON.stringify(extent));
+  console.debug('[computeLampsWasm] raster dims:', rasters['dtm'].length, 'expected:', extent.m * extent.n);
+  console.debug('[computeLampsWasm] raster pixels valid (dtm):', rasters['dtm'].filter(v => Number.isFinite(v)).length);
+  console.debug('[computeLampsWasm] rawTifs keys:', Object.keys(rawTifs));
+  console.debug('[computeLampsWasm] rawGeojson keys:', rawGeojson ? Object.keys(rawGeojson) : []);
 
   const coverageMask = new Uint8Array(size);
   for (let i = 0; i < size; i++) {
     coverageMask[i] = Number.isFinite(rasters['dtm'][i]) ? 1 : 0;
   }
 
-  const genericUrl = rawTifs['generic_res'];
-  let genericData: Float32Array;
-  if (genericUrl) {
-    genericData = (await fetchRaster(genericUrl)).data;
-  } else {
-    genericData = new Float32Array(size);
+  const geojsonLayers: Record<string, string> = {};
+  const gjNames = ['roads', 'rivers', 'buildings', 'generic_resistance'] as const;
+
+  if (rawGeojson) {
+    await Promise.all(
+      gjNames.map(async (name) => {
+        const url = rawGeojson[name];
+        if (url) {
+          geojsonLayers[name] = await fetchGeojson(url);
+        }
+      }),
+    );
   }
 
+  console.debug('[computeLampsWasm] geojson fetched:', Object.keys(geojsonLayers).filter(k => geojsonLayers[k] && geojsonLayers[k].length > 100));
+
+  const emptyGeojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
+  const zeroRaster = new Float32Array(size);
+
+  const roadBinary = rasterizeGeojson(
+    zeroRaster, extent.m, extent.n,
+    geojsonLayers['roads'] ?? emptyGeojson,
+    JSON.stringify({ roads: { resistance: 1.0, width: 0.0 } }),
+    extent.xmin, extent.ymax, extent.pixw,
+  ).resistanceMap;
+
+  const riverBinary = rasterizeGeojson(
+    zeroRaster, extent.m, extent.n,
+    geojsonLayers['rivers'] ?? emptyGeojson,
+    JSON.stringify({ rivers: { resistance: 1.0, width: 0.0 } }),
+    extent.xmin, extent.ymax, extent.pixw,
+  ).resistanceMap;
+
+  const buildingMask = rasterizeGeojson(
+    zeroRaster, extent.m, extent.n,
+    geojsonLayers['buildings'] ?? emptyGeojson,
+    JSON.stringify({ buildings: { resistance: 1.0, width: 0.0 } }),
+    extent.xmin, extent.ymax, extent.pixw,
+  ).resistanceMap;
+
+  const genericRes = rasterizeGeojson(
+    zeroRaster, extent.m, extent.n,
+    geojsonLayers['generic_resistance'] ?? emptyGeojson,
+    JSON.stringify({ generic_resistance: { resistance: 100.0, width: 0.0 } }),
+    extent.xmin, extent.ymax, extent.pixw,
+  ).resistanceMap;
+
+  console.debug('[computeLampsWasm] roadBinary non-zero:', roadBinary.filter(v => v > 0).length);
+  console.debug('[computeLampsWasm] riverBinary non-zero:', riverBinary.filter(v => v > 0).length);
+  console.debug('[computeLampsWasm] buildingMask non-zero:', buildingMask.filter(v => v > 0).length);
+  console.debug('[computeLampsWasm] genericRes non-zero:', genericRes.filter(v => v > 0).length);
+
   const lampCoords = extractLampCoords(lampFeatures, extent);
-  let lamps: Float64Array;
+  let lamps: Float32Array;
   let extractedCount = 0;
 
   if (lampCoords) {
     extractedCount = lampCoords.length / 3;
-    lamps = f32ToF64(lampCoords);
+    lamps = lampCoords;
   } else {
-    lamps = new Float64Array(0);
+    lamps = new Float32Array(0);
   }
 
-  const json = compute_lamp_and_total(
+  const rastParams: ResistanceParams = {
+    road_buffer: params.road_buffer ?? 200,
+    road_resmax: params.road_resmax ?? 10,
+    road_xmax: params.road_xmax ?? 5,
+    river_buffer: params.river_buffer ?? 10,
+    river_resmax: params.river_resmax ?? 2000,
+    river_xmax: params.river_xmax ?? 4,
+    landscape_rankmax: params.landscape_rankmax ?? 8,
+    landscape_resmax: params.landscape_resmax ?? 100,
+    landscape_xmax: params.landscape_xmax ?? 5,
+    linear_buffer: params.linear_buffer ?? 10,
+    linear_rankmax: params.linear_rankmax ?? 4,
+    linear_resmax: params.linear_resmax ?? 22000,
+    linear_xmax: params.linear_xmax ?? 3,
+    lamp_resmax: params.lamp_resmax ?? 1e8,
+    lamp_xmax: params.lamp_xmax ?? 1,
+    lamp_ext: params.lamp_ext ?? 100,
+    pixw: extent.pixw,
+    nrows: extent.m,
+    ncols: extent.n,
+  };
+
+  const pipelineResult = runPipeline(
+    roadBinary,
+    riverBinary,
+    buildingMask,
+    rasters['lcm'],
+    rasters['dtm'],
+    rasters['dsm'],
+    genericRes,
     lamps,
-    f32ToF64(rasters['soft_surf']),
-    f32ToF64(rasters['hard_surf']),
-    f32ToF64(rasters['dtm']),
-    f32ToF64(rasters['road_res']),
-    f32ToF64(rasters['river_res']),
-    f32ToF64(rasters['landscape_res']),
-    f32ToF64(rasters['linear_res']),
-    f32ToF64(genericData),
-    extent.m, extent.n,
-    extent.pixw,
-    params.lamp_resmax ?? 1e8,
-    params.lamp_xmax ?? 1,
-    params.lamp_ext ?? 100,
+    rastParams,
   );
 
-  const parsed = JSON.parse(json);
+  console.debug('[computeLampsWasm] pipeline result:', {
+    totalRes: { len: pipelineResult.totalRes.length, nonZeroFinite: pipelineResult.totalRes.filter(v => v > 0 && Number.isFinite(v)).length },
+    lampRes: { len: pipelineResult.lampRes.length, nonZeroFinite: pipelineResult.lampRes.filter(v => v > 0 && Number.isFinite(v)).length },
+    roadRes: { nonZeroFinite: pipelineResult.roadRes.filter(v => v > 0 && Number.isFinite(v)).length },
+    riverRes: { nonZeroFinite: pipelineResult.riverRes.filter(v => v > 0 && Number.isFinite(v)).length },
+    landscapeRes: { nonZeroFinite: pipelineResult.landscapeRes.filter(v => v > 0 && Number.isFinite(v)).length },
+    linearRes: { nonZeroFinite: pipelineResult.linearRes.filter(v => v > 0 && Number.isFinite(v)).length },
+    genericRes: { nonZeroFinite: pipelineResult.genericRes.filter(v => v > 0 && Number.isFinite(v)).length },
+    softSurf: { nonZeroFinite: pipelineResult.softSurf.filter(v => v > 0 && Number.isFinite(v)).length },
+    hardSurf: { nonZeroFinite: pipelineResult.hardSurf.filter(v => v > 0 && Number.isFinite(v)).length },
+    nrows: pipelineResult.nrows, ncols: pipelineResult.ncols,
+  });
 
   return {
-    totalRes: new Float32Array(parsed.total_res),
-    lampRes: new Float32Array(parsed.lamp_res),
+    totalRes: pipelineResult.totalRes,
+    lampRes: pipelineResult.lampRes,
     coverageMask,
     extractedCount,
   };

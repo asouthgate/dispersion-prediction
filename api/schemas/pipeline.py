@@ -67,6 +67,7 @@ class JobStatus(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     layers: list[ResultLayerInfo] | None = None
     raw_tifs: dict[str, str] | None = None
+    raw_geojson: dict[str, str] | None = None
     raster_extent: RasterExtentInfo | None = None
 
 

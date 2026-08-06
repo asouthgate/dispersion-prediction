@@ -1,4 +1,8 @@
-import initModule, { run_resistance_pipeline_wasm, init_panic_hook } from '../../wasm-connectivity/lib/wasm_connect.js';
+import initModule, {
+  run_resistance_pipeline_wasm,
+  rasterize_geojson as rasterizeGeojsonWasm,
+  init_panic_hook,
+} from '../../wasm-connectivity/lib/wasm_connect.js';
 
 let initialized = false;
 
@@ -37,11 +41,6 @@ export interface ResistanceParams {
   ncols: number;
 }
 
-export interface LampCoords {
-  coords: Float32Array;
-  extractedCount: number;
-}
-
 export interface ResistanceResult {
   totalRes: Float32Array;
   lampRes: Float32Array;
@@ -54,6 +53,37 @@ export interface ResistanceResult {
   hardSurf: Float32Array;
   nrows: number;
   ncols: number;
+}
+
+export function rasterizeGeojson(
+  baseRaster: Float32Array,
+  nrows: number,
+  ncols: number,
+  geojsonStr: string,
+  layerParamsStr: string,
+  xmin: number,
+  ymax: number,
+  cellsize: number,
+): { resistanceMap: Float32Array; layerMasks: { name: string; data: Float32Array }[] } {
+  const json = rasterizeGeojsonWasm(
+    f32ToF64(baseRaster),
+    nrows,
+    ncols,
+    -9999.0,
+    geojsonStr,
+    layerParamsStr,
+    xmin,
+    ymax,
+    cellsize,
+  );
+  const parsed = JSON.parse(json);
+  return {
+    resistanceMap: new Float32Array(parsed.resistance_map),
+    layerMasks: (parsed.layer_masks ?? []).map((m: { name: string; data: number[] }) => ({
+      name: m.name,
+      data: new Float32Array(m.data),
+    })),
+  };
 }
 
 export function runPipeline(
@@ -75,10 +105,14 @@ export function runPipeline(
 
   const json = run_resistance_pipeline_wasm(
     args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
-    paramsJson
+    paramsJson,
   );
 
   const parsed = JSON.parse(json);
+
+  if (parsed.error) {
+    throw new Error(`Resistance pipeline error: ${parsed.error}`);
+  }
 
   return {
     totalRes: new Float32Array(parsed.total_res),
