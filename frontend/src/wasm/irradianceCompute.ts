@@ -22,6 +22,9 @@ import initIrradianceModule from './irradiance.js';
 
 let mod: IrradianceModule | null = null;
 
+/** R raster package writes NA to GeoTIFF as ≈ -3.4e38; treat anything below this as no-data. */
+export const NODATA_THRESHOLD = -1e20;
+
 export async function ensureWasm(): Promise<IrradianceModule> {
   if (mod) return mod;
   mod = (await initIrradianceModule()) as IrradianceModule;
@@ -101,10 +104,9 @@ export function irradianceCombine(
   if (!md) throw new Error('WASM not initialized');
   const size = m * n;
 
-  const nodataThreshold = -1e20;
   for (const arr of [road, river, landscape, linear, generic]) {
     for (let i = 0; i < arr.length; i++) {
-      if (arr[i] < nodataThreshold) arr[i] = 0;
+      if (arr[i] < NODATA_THRESHOLD) arr[i] = 0;
     }
   }
 

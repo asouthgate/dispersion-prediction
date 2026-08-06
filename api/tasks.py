@@ -496,7 +496,7 @@ def _cleanup_token_job(task_id: str, success: bool) -> None:
 def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> None:
     """Decode browser-computed total resistance and write as GeoTIFF + ASC."""
     import base64
-    import struct
+    import numpy as np
     import rasterio
     from rasterio.transform import from_bounds
 
@@ -504,7 +504,7 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> 
     m = extent["m"]
     n = extent["n"]
     raw = base64.b64decode(total_res["data_base64"])
-    floats = struct.unpack(f"<{m * n}f", raw)
+    arr = np.frombuffer(raw, dtype="<f4").reshape((m, n))
 
     tif_path = os.path.join(work_dir, "total_res.tif")
     transform = from_bounds(extent["xmin"], extent["ymin"], extent["xmax"], extent["ymax"], n, m)
@@ -512,7 +512,7 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> 
         tif_path, "w", driver="GTiff", height=m, width=n, count=1,
         dtype="float32", crs="EPSG:27700", transform=transform,
     ) as dst:
-        dst.write_band(1, floats)
+        dst.write_band(1, arr)
 
     circuitscape_dir = os.path.join(work_dir, "circuitscape")
     os.makedirs(circuitscape_dir, exist_ok=True)
@@ -525,8 +525,6 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> 
         f.write(f"yllcorner     {extent['ymin']}\n")
         f.write(f"cellsize      {extent['pixw']}\n")
         f.write(f"NODATA_value  -9999\n")
-        import numpy as np
-        arr = np.array(floats, dtype=np.float32).reshape((m, n))
         np.savetxt(f, arr, fmt="%.6f", delimiter=" ")
 
     logger.info("Wrote browser-computed total resistance (%dx%d) to %s", m, n, asc_path)

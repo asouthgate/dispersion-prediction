@@ -18,11 +18,3 @@ export async function fetchRaster(url: string): Promise<RasterData> {
   return { data, m: image.getHeight(), n: image.getWidth() };
 }
 
-export async function fetchRasters(
-  urls: Record<string, string>,
-): Promise<Record<string, RasterData>> {
-  const entries = await Promise.all(
-    Object.entries(urls).map(async ([key, url]) => [key, await fetchRaster(url)] as const),
-  );
-  return Object.fromEntries(entries);
-}

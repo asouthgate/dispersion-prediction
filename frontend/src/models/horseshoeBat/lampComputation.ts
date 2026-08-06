@@ -1,6 +1,6 @@
 import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
 import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
-import { ensureWasm, irradianceRun, irradianceToResistance, irradianceCombine } from '../../wasm/irradianceCompute';
+import { ensureWasm, irradianceRun, irradianceToResistance, irradianceCombine, NODATA_THRESHOLD } from '../../wasm/irradianceCompute';
 import { fetchRaster } from '../../wasm/geotiffFetch';
 import { rasterToPngBlobUrl } from '../../wasm/rasterize';
 import type { JobStatus } from './pipelineClient';
@@ -20,11 +20,10 @@ export interface StoredTotalRes {
 
 type Extent = NonNullable<JobStatus['raster_extent']>;
 
-function lampCoordToPixel(
-  lng: number, lat: number,
+function bngToPixel(
+  easting: number, northing: number,
   extent: { xmin: number; ymax: number; pixw: number },
 ): [number, number] {
-  const [easting, northing] = wgs84ToBng(lat, lng);
   const col = (easting - extent.xmin) / extent.pixw;
   const row = (extent.ymax - northing) / extent.pixw;
   return [col, row];
@@ -38,18 +37,39 @@ function bngBoundsToWgs84(
   return [west, south, east, north];
 }
 
-function extractLampCoords(features: DataFeature[], extent: Extent): Float32Array | null {
+export function extractLampCoords(features: DataFeature[], extent: Extent): Float32Array | null {
   const coords: number[] = [];
   for (const f of features) {
     const gj = f.geojson as unknown as {
       type: string;
-      geometry?: { type: string; coordinates: [number, number] };
+      geometry?: { type: string; coordinates: unknown };
     };
-    if (!gj.geometry || gj.geometry.type !== 'Point' || !gj.geometry.coordinates) continue;
-    const [lng, lat] = gj.geometry.coordinates;
-    const [col, row] = lampCoordToPixel(lng, lat, extent);
+    const geom = gj?.geometry;
+    if (!geom) continue;
     const height = (f.data?.height as number) ?? 0;
-    coords.push(col, row, height);
+
+    if (geom.type === 'Point') {
+      const [lng, lat] = geom.coordinates as [number, number];
+      const [easting, northing] = wgs84ToBng(lat, lng);
+      const [col, row] = bngToPixel(easting, northing, extent);
+      coords.push(col, row, height);
+    } else if (geom.type === 'LineString') {
+      const spacing = (f.data?.spacing as number) ?? 50;
+      const ring = geom.coordinates as [number, number][];
+      for (let i = 0; i < ring.length - 1; i++) {
+        const [e1, n1] = wgs84ToBng(ring[i][1], ring[i][0]);
+        const [e2, n2] = wgs84ToBng(ring[i + 1][1], ring[i + 1][0]);
+        const dx = e2 - e1;
+        const dy = n2 - n1;
+        const segLen = Math.sqrt(dx * dx + dy * dy);
+        const nPoints = Math.max(1, Math.floor(segLen / spacing));
+        for (let p = 1; p <= nPoints; p++) {
+          const t = p / nPoints;
+          const [col, row] = bngToPixel(e1 + t * dx, n1 + t * dy, extent);
+          coords.push(col, row, height);
+        }
+      }
+    }
   }
   if (coords.length === 0) return null;
   return new Float32Array(coords);
@@ -79,11 +99,8 @@ export async function computeLampsWasm(
   for (const { k, data } of results) rasters[k] = data;
 
   const coverageMask = new Uint8Array(size);
-  const nodataThreshold = -1e20;
-  let masked = 0;
   for (let i = 0; i < size; i++) {
-    coverageMask[i] = Number.isFinite(rasters['dtm'][i]) && rasters['dtm'][i] > nodataThreshold ? 1 : 0;
-    if (coverageMask[i] === 0) masked++;
+    coverageMask[i] = Number.isFinite(rasters['dtm'][i]) && rasters['dtm'][i] > NODATA_THRESHOLD ? 1 : 0;
   }
 
   const genericUrl = rawTifs['generic_res'];
@@ -124,7 +141,7 @@ export async function computeLampsWasm(
   return { totalRes, lampRes, coverageMask, extractedCount };
 }
 
-function applyMask(data: Float32Array, mask: Uint8Array): Float32Array {
+export function applyMask(data: Float32Array, mask: Uint8Array): Float32Array {
   const result = new Float32Array(data);
   for (let i = 0; i < result.length; i++) {
     if (mask[i] === 0) result[i] = NaN;
