@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:wasm": "make -C src/wasm",
+    "build:wasm": "make -C wasm-connectivity build",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run"

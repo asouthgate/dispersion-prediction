@@ -313,43 +313,56 @@ def _run_r_pipeline(
 
     r_script_map = {
         "coverage": "scripts/run-coverage-pipeline.R",
-        "resistance": "scripts/run-resistance-pipeline-json.R",
         "current": "scripts/run-circuitscape.R",
     }
-    rscript = r_script_map.get(stage)
-    if not rscript:
-        raise ValueError(f"Unknown stage: {stage}")
+    binary_map = {
+        "resistance": "resistance-pipeline",
+    }
 
-    script_path = os.path.join(REPO_ROOT, rscript)
-    if not os.path.exists(script_path):
-        raise FileNotFoundError(f"R script not found: {rscript}")
+    use_binary = stage in binary_map
+    if use_binary:
+        binary_path = _shutil.which(binary_map[stage])
+        if not binary_path:
+            raise RuntimeError(f"Binary not found: {binary_map[stage]}")
+        from services.data_fetch import fetch_resistance_inputs
+        logger.info("Fetching DB data for resistance pipeline...")
+        fetch_resistance_inputs(work_dir)
+        cmd = [binary_path, work_dir]
+        cwd = work_dir
+        env = os.environ.copy()
+    else:
+        rscript = r_script_map.get(stage)
+        if not rscript:
+            raise ValueError(f"Unknown stage: {stage}")
+        script_path = os.path.join(REPO_ROOT, rscript)
+        if not os.path.exists(script_path):
+            raise FileNotFoundError(f"R script not found: {rscript}")
+        cmd = ["Rscript", "--no-init-file", script_path, os.path.join(work_dir, "inputs.json")]
+        cwd = REPO_ROOT
+        env = os.environ.copy()
+        env["R_PIPELINE_WORKDIR"] = work_dir
 
-    env = os.environ.copy()
-    env["R_PIPELINE_WORKDIR"] = work_dir
-
-    logger.info("Running R pipeline: stage=%s script=%s", stage, script_path)
+    logger.info("Running pipeline: stage=%s cmd=%s", stage, cmd[0])
     proc = None
     task_id = task.request.id
 
     def _on_sigterm(signum, frame):
         if proc is not None:
-            logger.info("Task received SIGTERM; terminating R process group")
+            logger.info("Task received SIGTERM; terminating process group")
             _terminate_group(proc)
 
     old_handler = signal.signal(signal.SIGTERM, _on_sigterm)
     try:
-        # Run Rscript as its own session leader so cancellation can signal the
-        # whole process group (Rscript + any R helpers) cleanly.
         proc = subprocess.Popen(
-            ["Rscript", "--no-init-file", script_path, os.path.join(work_dir, "inputs.json")],
-            cwd=REPO_ROOT, env=env,
+            cmd,
+            cwd=cwd, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             start_new_session=True,
         )
         # Guard the cancellation race
         is_cancelled = getattr(task.request, "is_cancelled", None)
         if callable(is_cancelled) and is_cancelled():
-            logger.info("Task was already cancelled; terminating R process group")
+            logger.info("Task was already cancelled; terminating process group")
             _terminate_group(proc)
             try:
                 proc.communicate(timeout=10)
@@ -404,6 +417,11 @@ def _run_r_pipeline(
         stdout = "".join(stdout_lines)
         stderr = "".join(stderr_lines)
     except FileNotFoundError:
+        if use_binary:
+            raise RuntimeError(
+                f"Pipeline binary not found: {binary_map[stage]}. "
+                "Resistance pipeline requires the Rust binary."
+            )
         raise RuntimeError(
             "R environment not configured. Resistance and Current pipelines require R. "
             "Only Coverage is available in this deployment."
@@ -425,11 +443,11 @@ def _run_r_pipeline(
     if proc.returncode != 0:
         is_cancelled = getattr(task.request, "is_cancelled", None)
         if callable(is_cancelled) and is_cancelled():
-            logger.info("R pipeline was cancelled (rc=%d), not treating as error", proc.returncode)
+            logger.info("Pipeline was cancelled (rc=%d), not treating as error", proc.returncode)
             return [], warnings
         stderr_tail = (stderr or "")[-500:] or "(no output)"
-        logger.error("R pipeline failed (rc=%d): %s", proc.returncode, stderr_tail)
-        raise RuntimeError(f"R pipeline failed (rc={proc.returncode}): {stderr_tail[:300]}")
+        logger.error("Pipeline failed (rc=%d): %s", proc.returncode, stderr_tail)
+        raise RuntimeError(f"Pipeline failed (rc={proc.returncode}): {stderr_tail[:300]}")
 
     layers_raw = collect_results(work_dir)
     if not layers_raw:

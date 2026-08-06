@@ -56,6 +56,9 @@ RUN julia -e 'using Pkg; Pkg.activate("/opt/julia"); Pkg.instantiate()'
 
 RUN Rscript -e "options(interactive = FALSE); install.packages('testthat', clean = TRUE)"
 
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
 COPY api/requirements.txt /tmp/
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
@@ -67,6 +70,12 @@ COPY r-pkg/R/cs.ini.template /app/r-pkg/R/cs.ini.template
 COPY docker/batapp/bats.cfg.template /opt/bats.cfg.template
 
 COPY test/ /app/test/
+
+COPY frontend/wasm-connectivity/ /app/frontend/wasm-connectivity/
+COPY resistance-cli/ /app/resistance-cli/
+WORKDIR /app/resistance-cli
+RUN cargo build --release && cp target/release/resistance-pipeline /usr/local/bin/
+WORKDIR /app
 
 
 ENV PIPELINE_WORK_DIR=/tmp/circuitscape

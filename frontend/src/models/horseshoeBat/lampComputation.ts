@@ -1,6 +1,7 @@
 import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
 import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
-import { ensureWasm, irradianceRun, irradianceToResistance, irradianceCombine, NODATA_THRESHOLD } from '../../wasm/irradianceCompute';
+import { ensureResistanceWasm } from '../../wasm/resistanceCompute';
+import { compute_lamp_and_total } from '../../../wasm-connectivity/lib/wasm_connect.js';
 import { fetchRaster } from '../../wasm/geotiffFetch';
 import { rasterToPngBlobUrl } from '../../wasm/rasterize';
 import type { JobStatus } from './pipelineClient';
@@ -35,6 +36,12 @@ function bngBoundsToWgs84(
   const [west, south] = bngToWgs84LngLat(xmin, ymin);
   const [east, north] = bngToWgs84LngLat(xmax, ymax);
   return [west, south, east, north];
+}
+
+function f32ToF64(arr: Float32Array): Float64Array {
+  const out = new Float64Array(arr.length);
+  for (let i = 0; i < arr.length; i++) out[i] = arr[i];
+  return out;
 }
 
 export function extractLampCoords(features: DataFeature[], extent: Extent): Float32Array | null {
@@ -81,7 +88,7 @@ export async function computeLampsWasm(
   extent: Extent,
   params: Record<string, number>,
 ): Promise<{ totalRes: Float32Array; lampRes: Float32Array; coverageMask: Uint8Array; extractedCount: number }> {
-  await ensureWasm();
+  await ensureResistanceWasm();
 
   const size = extent.m * extent.n;
 
@@ -100,7 +107,7 @@ export async function computeLampsWasm(
 
   const coverageMask = new Uint8Array(size);
   for (let i = 0; i < size; i++) {
-    coverageMask[i] = Number.isFinite(rasters['dtm'][i]) && rasters['dtm'][i] > NODATA_THRESHOLD ? 1 : 0;
+    coverageMask[i] = Number.isFinite(rasters['dtm'][i]) ? 1 : 0;
   }
 
   const genericUrl = rawTifs['generic_res'];
@@ -112,33 +119,41 @@ export async function computeLampsWasm(
   }
 
   const lampCoords = extractLampCoords(lampFeatures, extent);
-  let lampRes: Float32Array;
+  let lamps: Float64Array;
   let extractedCount = 0;
 
   if (lampCoords) {
     extractedCount = lampCoords.length / 3;
-    const cutoff = params.lamp_ext ?? 100;
-    const irradiance = irradianceRun(
-      lampCoords,
-      rasters['soft_surf'], rasters['hard_surf'], rasters['dtm'],
-      extent.m, extent.n, extent.pixw, cutoff, 0, 0.5,
-    );
-    lampRes = irradianceToResistance(
-      irradiance, extent.m, extent.n,
-      params.lamp_resmax ?? 1e8, params.lamp_xmax ?? 1,
-    );
+    lamps = f32ToF64(lampCoords);
   } else {
-    lampRes = new Float32Array(size);
+    lamps = new Float64Array(0);
   }
 
-  const totalRes = irradianceCombine(
-    lampRes,
-    rasters['road_res'], rasters['river_res'], rasters['landscape_res'],
-    rasters['linear_res'], genericData,
+  const json = compute_lamp_and_total(
+    lamps,
+    f32ToF64(rasters['soft_surf']),
+    f32ToF64(rasters['hard_surf']),
+    f32ToF64(rasters['dtm']),
+    f32ToF64(rasters['road_res']),
+    f32ToF64(rasters['river_res']),
+    f32ToF64(rasters['landscape_res']),
+    f32ToF64(rasters['linear_res']),
+    f32ToF64(genericData),
     extent.m, extent.n,
+    extent.pixw,
+    params.lamp_resmax ?? 1e8,
+    params.lamp_xmax ?? 1,
+    params.lamp_ext ?? 100,
   );
 
-  return { totalRes, lampRes, coverageMask, extractedCount };
+  const parsed = JSON.parse(json);
+
+  return {
+    totalRes: new Float32Array(parsed.total_res),
+    lampRes: new Float32Array(parsed.lamp_res),
+    coverageMask,
+    extractedCount,
+  };
 }
 
 export function applyMask(data: Float32Array, mask: Uint8Array): Float32Array {
