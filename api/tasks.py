@@ -601,17 +601,26 @@ def _cleanup_token_job(task_id: str, success: bool) -> None:
     except Exception:
         pass
 
-def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> None:
-    """Decode browser-computed total resistance and write as GeoTIFF + ASC."""
+def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roost: dict[str, Any]) -> None:
+    """Decode browser-computed total resistance and write as GeoTIFF + ASC files.
+
+    Also writes ground.asc (roost point) and source.asc (roost disk) required
+    by Circuitscape, so the server does not fall back to server-side resistance.
+    """
 
     extent = total_res["extent"]
     m = extent["m"]
     n = extent["n"]
+    pixw = extent["pixw"]
+    xmin = extent["xmin"]
+    ymin = extent["ymin"]
+    xmax = extent["xmax"]
+    ymax = extent["ymax"]
     raw = base64.b64decode(total_res["data_base64"])
     arr = np.frombuffer(raw, dtype="<f4").reshape((m, n))
 
     tif_path = os.path.join(work_dir, "total_res.tif")
-    transform = from_bounds(extent["xmin"], extent["ymin"], extent["xmax"], extent["ymax"], n, m)
+    transform = from_bounds(xmin, ymin, xmax, ymax, n, m)
     with rasterio.open(
         tif_path, "w", driver="GTiff", height=m, width=n, count=1,
         dtype="float32", crs="EPSG:27700", transform=transform,
@@ -625,13 +634,51 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> 
     with open(asc_path, "w") as f:
         f.write(f"ncols         {n}\n")
         f.write(f"nrows         {m}\n")
-        f.write(f"xllcorner     {extent['xmin']}\n")
-        f.write(f"yllcorner     {extent['ymin']}\n")
-        f.write(f"cellsize      {extent['pixw']}\n")
+        f.write(f"xllcorner     {xmin}\n")
+        f.write(f"yllcorner     {ymin}\n")
+        f.write(f"cellsize      {pixw}\n")
         f.write(f"NODATA_value  -9999\n")
         np.savetxt(f, arr, fmt="%.6f", delimiter=" ")
 
     logger.info("Wrote browser-computed total resistance (%dx%d) to %s", m, n, asc_path)
+
+    roost_e, roost_n = wgs84_to_bng(roost["lng"], roost["lat"])
+    radius = float(roost.get("radiusMeters", 2500.0))
+
+    roost_col = int((roost_e - xmin) / pixw)
+    roost_row = int((ymax - roost_n) / pixw)
+
+    ground = np.zeros((m, n), dtype=np.float32)
+    if 0 <= roost_row < m and 0 <= roost_col < n:
+        ground[roost_row, roost_col] = 1.0
+
+    ground_path = os.path.join(circuitscape_dir, "ground.asc")
+    with open(ground_path, "w") as f:
+        f.write(f"ncols         {n}\n")
+        f.write(f"nrows         {m}\n")
+        f.write(f"xllcorner     {xmin}\n")
+        f.write(f"yllcorner     {ymin}\n")
+        f.write(f"cellsize      {pixw}\n")
+        f.write(f"NODATA_value  -9999\n")
+        np.savetxt(f, ground, fmt="%.0f", delimiter=" ")
+
+    ys = np.arange(m, dtype=np.float64) * pixw + ymin + pixw * 0.5
+    xs = np.arange(n, dtype=np.float64) * pixw + xmin + pixw * 0.5
+    xx, yy = np.meshgrid(xs, ys)
+    dist = np.sqrt((xx - roost_e) ** 2 + (yy - roost_n) ** 2)
+    source = np.where(dist <= radius, 1.0, 0.0).astype(np.float32)
+
+    source_path = os.path.join(circuitscape_dir, "source.asc")
+    with open(source_path, "w") as f:
+        f.write(f"ncols         {n}\n")
+        f.write(f"nrows         {m}\n")
+        f.write(f"xllcorner     {xmin}\n")
+        f.write(f"yllcorner     {ymin}\n")
+        f.write(f"cellsize      {pixw}\n")
+        f.write(f"NODATA_value  -9999\n")
+        np.savetxt(f, source, fmt="%.0f", delimiter=" ")
+
+    logger.info("Wrote ground.asc (roost at %d,%d) and source.asc (radius=%.0fm)", roost_col, roost_row, radius)
 
 @shared_task(bind=True, name="tasks.run_pipeline")
 def run_pipeline_task(
@@ -698,7 +745,7 @@ def run_pipeline_task(
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
                 if total_resistance:
                     _progress("Writing browser-computed total resistance...")
-                    _write_total_resistance_raster(work_dir, total_resistance)
+                    _write_total_resistance_raster(work_dir, total_resistance, roost)
                 asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
                 if not os.path.exists(asc_path):
                     _progress("Checking for cached resistance results...")

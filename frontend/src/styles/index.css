@@ -474,7 +474,9 @@ input[type='number']:focus, input[type='text']:focus, select:focus {
 }
 
 .hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
-.gov-notice { font-size: 10px; color: var(--text-dim); line-height: 1.4; margin-top: 6px; padding: 6px 8px; background: var(--bg-input); border-radius: 2px; border-left: 3px solid var(--accent); }
+.gov-notice { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-top: 6px; padding: 8px 10px; background: var(--bg-input); border-radius: 2px; border-left: 3px solid var(--accent); }
+.gov-notice p { margin-bottom: 6px; }
+.gov-notice p:last-child { margin-bottom: 0; }
 .gov-notice .link-button { background: none; border: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
 
 /*  BUTTONS  */

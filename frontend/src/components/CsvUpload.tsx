@@ -45,21 +45,19 @@ export function FileUpload() {
       {loaded > 0 && (
         <p className="hint">Loaded {loaded} lamps</p>
       )}
-      <p className="gov-notice">
-        Raw street lamp data and user-imported vector features such as 
-        buildings and roads are confined to your browser and are not 
-        transfered to our server. 
-        Irradiance and other resistance maps are calculated in your browser using
-        WebAssembly.
-        Derived model outputs such as
-        resistance and current maps are processed by our server,
-        but are deleted after processing.
-        We process derived resistance maps temporarily
-        in order to generate the final dispersion map.
-        By uploading your data, you agree
+      <div className="gov-notice">
+        <p>Raw street lamp data and user-imported vector features such as
+        buildings and roads are confined to your browser and are not
+        transferred to our server.</p>
+        <p>Irradiance and other resistance maps are calculated in your
+        browser using WebAssembly. Only derived model outputs such as
+        resistance and current maps are sent to our server, where they are
+        processed temporarily to generate the final dispersion map and
+        then deleted.</p>
+        <p>By using this service, you agree
         to our end user license agreement{' '}
-        <button className="link-button" onClick={() => setShowAgreement(true)}>here</button>.
-      </p>
+        <button className="link-button" onClick={() => setShowAgreement(true)}>here</button>.</p>
+      </div>
       {warning && (
         <div className="warning-banner">{warning}</div>
       )}
