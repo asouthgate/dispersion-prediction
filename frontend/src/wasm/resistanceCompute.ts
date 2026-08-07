@@ -19,6 +19,13 @@ function f32ToF64(arr: Float32Array): Float64Array {
   return out;
 }
 
+function base64ToF32Array(b64: string): Float32Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Float32Array(bytes.buffer);
+}
+
 export interface ResistanceParams {
   road_buffer: number;
   road_resmax: number;
@@ -78,10 +85,10 @@ export function rasterizeGeojson(
   );
   const parsed = JSON.parse(json);
   return {
-    resistanceMap: new Float32Array(parsed.resistance_map),
-    layerMasks: (parsed.layer_masks ?? []).map((m: { name: string; data: number[] }) => ({
+    resistanceMap: base64ToF32Array(parsed.resistance_map),
+    layerMasks: (parsed.layer_masks ?? []).map((m: { name: string; data: string }) => ({
       name: m.name,
-      data: new Float32Array(m.data),
+      data: base64ToF32Array(m.data),
     })),
   };
 }
@@ -118,21 +125,17 @@ export function runPipelineBrowser(
     throw new Error(`Resistance pipeline error: ${parsed.error}`);
   }
 
-  const lr = new Float32Array(parsed.landscape_res);
-  const lrFin = lr.filter(v => Number.isFinite(v));
-  console.debug(`[resistanceCompute] WASM result: landscape_res length=${lr.length}, finite=${lrFin.length}, min=${lrFin.length ? Math.min(...lrFin) : 'none'}, max=${lrFin.length ? Math.max(...lrFin) : 'none'}`);
-
   return {
-    totalRes: new Float32Array(parsed.total_res),
-    lampRes: new Float32Array(parsed.lamp_res),
-    roadRes: new Float32Array(parsed.road_res),
-    riverRes: new Float32Array(parsed.river_res),
-    landscapeRes: new Float32Array(parsed.landscape_res),
-    linearRes: new Float32Array(parsed.linear_res),
-    genericRes: new Float32Array(parsed.generic_res),
-    softSurf: new Float32Array(parsed.soft_surf),
-    hardSurf: new Float32Array(parsed.hard_surf),
-    nrows: parsed.nrows,
-    ncols: parsed.ncols,
+    totalRes:     base64ToF32Array(parsed.total_res),
+    lampRes:      base64ToF32Array(parsed.lamp_res),
+    roadRes:      base64ToF32Array(parsed.road_res),
+    riverRes:     base64ToF32Array(parsed.river_res),
+    landscapeRes: base64ToF32Array(parsed.landscape_res),
+    linearRes:    base64ToF32Array(parsed.linear_res),
+    genericRes:   base64ToF32Array(parsed.generic_res),
+    softSurf:     base64ToF32Array(parsed.soft_surf),
+    hardSurf:     base64ToF32Array(parsed.hard_surf),
+    nrows:        parsed.nrows,
+    ncols:        parsed.ncols,
   };
 }
