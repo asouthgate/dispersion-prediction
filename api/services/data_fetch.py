@@ -75,11 +75,14 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         cur.execute(
             pgsql.SQL(
                 """
-                SELECT ST_DumpValues(
-                    ST_Resample(
+                WITH resampled AS (
+                    SELECT ST_Resample(
                         ST_Union(ST_Clip(rast, geom)),
                         %s, %s
-                    ), 1
+                    ) AS rast
+                    FROM {},
+                         (SELECT ST_MakeEnvelope(%s, %s, %s, %s, 27700) AS geom) AS t2
+                    WHERE tile_extent && t2.geom
                 )
                 SELECT
                     ST_DumpValues(rast, 1),
@@ -96,11 +99,9 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         if row is None or row[0] is None:
             return None
 
-        vals = row[0]
+        vals, rxmin, rymin, rxmax, rymax = row
+
         if isinstance(vals, str):
-            logger.warning(
-                "ST_DumpValues returned a string; parsing as literal array"
-            )
             vals = json.loads(vals.replace("{", "[").replace("}", "]"))
 
         arr = np.array(vals, dtype=np.float32)
@@ -112,7 +113,7 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
             )
             arr = np.zeros((nrows, ncols), dtype=np.float32)
 
-        transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
+        transform = from_bounds(rxmin, rymin, rxmax, rymax, ncols, nrows)
         buf = io.BytesIO()
         with rasterio.open(
             buf, "w", driver="GTiff", height=nrows, width=ncols,
