@@ -117,6 +117,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Build WASM
+        working-directory: frontend/wasm-connectivity
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          rustup target add wasm32-unknown-unknown
+          make build
       - name: Build engine
         working-directory: frontend/gsbio-engine
         run: npm ci && npm run build
