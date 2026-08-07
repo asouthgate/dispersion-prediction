@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useEngine, type FileSourceDef } from '@gsbio/engine';
+import { AgreementModal } from './AgreementModal';
 
 const LIGHTS_SOURCE: FileSourceDef = {
   id: 'uploaded-lights',
@@ -11,6 +12,7 @@ export function FileUpload() {
   const engine = useEngine();
   const [warning, setWarning] = useState('');
   const [loaded, setLoaded] = useState(0);
+  const [showAgreement, setShowAgreement] = useState(false);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -38,7 +40,7 @@ export function FileUpload() {
 
   return (
     <div className="csv-upload">
-      <p className="hint">Upload a GeoJSON file with Point features (coordinates in WGS84).</p>
+      <p className="hint">Import a GeoJSON file with Point features (coordinates in WGS84).</p>
       <input type="file" accept=".geojson,.json" onChange={handleFile} />
       {loaded > 0 && (
         <p className="hint">Loaded {loaded} lamps</p>
@@ -55,11 +57,13 @@ export function FileUpload() {
         We process derived resistance maps temporarily
         in order to generate the final dispersion map.
         By uploading your data, you agree
-        to our end user license agreement <a href="/license">here</a>.
+        to our end user license agreement{' '}
+        <button className="link-button" onClick={() => setShowAgreement(true)}>here</button>.
       </p>
       {warning && (
         <div className="warning-banner">{warning}</div>
       )}
+      {showAgreement && <AgreementModal onClose={() => setShowAgreement(false)} />}
     </div>
   );
 }
