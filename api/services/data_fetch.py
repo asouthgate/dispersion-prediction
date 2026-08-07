@@ -356,10 +356,10 @@ def fetch_resistance_inputs(work_dir: str):
 
 
 def fetch_landscape_inputs(work_dir: str):
-    """Fetch DTM/DSM/LCM rasters and building vectors for landscape-only computation.
+    """Fetch DTM/DSM/LCM rasters and building/road/river vectors for landscape computation.
 
-    Fetches coverage rasters and rasterizes building vectors from PostGIS.
-    Does NOT fetch road/river vectors — those come from browser-side drawn features.
+    Fetches coverage rasters and rasterizes vector features from PostGIS.
+    User-drawn features (from GPKG files) are merged on top of the DB-sourced data.
     """
     cfg = _get_db_config()
     if cfg is None:
@@ -465,6 +465,40 @@ def fetch_landscape_inputs(work_dir: str):
         with open(generic_path, "w") as f:
             json.dump({"type": "FeatureCollection", "features": []}, f)
         _merge_drawn_features(work_dir, [generic_path])
+
+        roads_table = cfg.get("roads_table")
+        roads_path = os.path.join(work_dir, "roads.geojson")
+        if roads_table:
+            logger.info("Fetching road vectors from %s...", roads_table)
+            gj = _fetch_vector_as_geojson(
+                conn, roads_table, "roads", xmin, ymin, xmax, ymax
+            )
+            if gj:
+                with open(roads_path, "w") as f:
+                    f.write(gj)
+                logger.info("Wrote roads.geojson (%d bytes)", len(gj))
+            else:
+                with open(roads_path, "w") as f:
+                    json.dump({"type": "FeatureCollection", "features": []}, f)
+                logger.warning("No road vectors found in %s", roads_table)
+        _merge_drawn_features(work_dir, [roads_path])
+
+        rivers_table = cfg.get("rivers_table")
+        rivers_path = os.path.join(work_dir, "rivers.geojson")
+        if rivers_table:
+            logger.info("Fetching river vectors from %s...", rivers_table)
+            gj = _fetch_vector_as_geojson(
+                conn, rivers_table, "rivers", xmin, ymin, xmax, ymax
+            )
+            if gj:
+                with open(rivers_path, "w") as f:
+                    f.write(gj)
+                logger.info("Wrote rivers.geojson (%d bytes)", len(gj))
+            else:
+                with open(rivers_path, "w") as f:
+                    json.dump({"type": "FeatureCollection", "features": []}, f)
+                logger.warning("No river vectors found in %s", rivers_table)
+        _merge_drawn_features(work_dir, [rivers_path])
 
     finally:
         conn.close()

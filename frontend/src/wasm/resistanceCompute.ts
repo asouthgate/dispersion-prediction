@@ -1,5 +1,4 @@
 import initModule, {
-  run_resistance_pipeline_wasm,
   run_resistance_pipeline_browser,
   rasterize_geojson as rasterizeGeojsonWasm,
   init_panic_hook,
@@ -87,48 +86,6 @@ export function rasterizeGeojson(
   };
 }
 
-export function runPipeline(
-  roadBinary: Float32Array,
-  riverBinary: Float32Array,
-  buildingMask: Float32Array,
-  lcm: Float32Array,
-  dtm: Float32Array,
-  dsm: Float32Array,
-  genericResistance: Float32Array,
-  lamps: Float32Array,
-  params: ResistanceParams,
-): ResistanceResult {
-  const args: Float64Array[] = [
-    roadBinary, riverBinary, buildingMask, lcm, dtm, dsm, genericResistance, lamps,
-  ].map(f32ToF64);
-
-  const paramsJson = JSON.stringify(params);
-
-  const json = run_resistance_pipeline_wasm(
-    args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
-    paramsJson,
-  );
-
-  const parsed = JSON.parse(json);
-
-  if (parsed.error) {
-    throw new Error(`Resistance pipeline error: ${parsed.error}`);
-  }
-
-  return {
-    totalRes: new Float32Array(parsed.total_res),
-    lampRes: new Float32Array(parsed.lamp_res),
-    roadRes: new Float32Array(parsed.road_res),
-    riverRes: new Float32Array(parsed.river_res),
-    landscapeRes: new Float32Array(parsed.landscape_res),
-    linearRes: new Float32Array(parsed.linear_res),
-    genericRes: new Float32Array(parsed.generic_res),
-    softSurf: new Float32Array(parsed.soft_surf),
-    hardSurf: new Float32Array(parsed.hard_surf),
-    nrows: parsed.nrows,
-    ncols: parsed.ncols,
-  };
-}
 
 export function runPipelineBrowser(
   roadBinary: Float32Array,
@@ -138,14 +95,17 @@ export function runPipelineBrowser(
   dsm: Float32Array,
   genericResistance: Float32Array,
   lamps: Float32Array,
-  landscapeRes: Float32Array,
+  landscapeConductance: Float32Array,
   params: ResistanceParams,
 ): ResistanceResult {
   const args: Float64Array[] = [
-    roadBinary, riverBinary, buildingMask, dtm, dsm, genericResistance, lamps, landscapeRes,
+    roadBinary, riverBinary, buildingMask, dtm, dsm, genericResistance, lamps, landscapeConductance,
   ].map(f32ToF64);
 
   const paramsJson = JSON.stringify(params);
+
+  const condFin = landscapeConductance.filter(v => Number.isFinite(v));
+  console.debug(`[resistanceCompute] runPipelineBrowser input: landscapeConductance length=${landscapeConductance.length}, finite=${condFin.length}, min=${condFin.length ? Math.min(...condFin) : 'none'}, max=${condFin.length ? Math.max(...condFin) : 'none'}`);
 
   const json = run_resistance_pipeline_browser(
     args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
@@ -157,6 +117,10 @@ export function runPipelineBrowser(
   if (parsed.error) {
     throw new Error(`Resistance pipeline error: ${parsed.error}`);
   }
+
+  const lr = new Float32Array(parsed.landscape_res);
+  const lrFin = lr.filter(v => Number.isFinite(v));
+  console.debug(`[resistanceCompute] WASM result: landscape_res length=${lr.length}, finite=${lrFin.length}, min=${lrFin.length ? Math.min(...lrFin) : 'none'}, max=${lrFin.length ? Math.max(...lrFin) : 'none'}`);
 
   return {
     totalRes: new Float32Array(parsed.total_res),

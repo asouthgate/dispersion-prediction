@@ -677,7 +677,12 @@ def run_pipeline_task(
                 for layer in layers:
                     lid = layer["id"]
                     raw_tifs[lid] = f"/api/rasters/{self.request.id}/raw/{lid}.tif"
+                cond_path = os.path.join(work_dir, "landscape_conductance.tif")
+                if os.path.exists(cond_path):
+                    raw_tifs["landscape_conductance"] = f"/api/rasters/{self.request.id}/raw/landscape_conductance.tif"
                 raster_extent = collect_raster_info(work_dir)
+
+                layers = [l for l in layers if l["id"] != "landscape_conductance"]
 
                 raw_geojson = {}
                 for gj_name in ("roads", "rivers", "buildings", "generic_resistance"):

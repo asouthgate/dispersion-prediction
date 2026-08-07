@@ -236,6 +236,7 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
     error = None
     layers = None
     raw_tifs = None
+    raw_geojson = None
     raster_extent = None
     warnings: list[str] = []
 
@@ -246,6 +247,7 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
         layers_data = payload.get("layers")
         warnings = payload.get("warnings", []) or []
         raw_tifs = payload.get("raw_tifs")
+        raw_geojson = payload.get("raw_geojson")
         raster_extent = payload.get("raster_extent")
         progress_label = "Done"
         if layers_data:
@@ -273,6 +275,7 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
         warnings=warnings,
         layers=layers,
         raw_tifs=raw_tifs,
+        raw_geojson=raw_geojson,
         raster_extent=raster_extent,
     )
 

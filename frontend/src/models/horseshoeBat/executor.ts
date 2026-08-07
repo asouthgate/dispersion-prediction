@@ -7,9 +7,19 @@ import type {
 import type { PipelineStage } from './model';
 import { horseshoeBatModel } from './model';
 import { runPipelineJob } from './pipelineClient';
-import { computeLampsWasm, buildLampResultLayers, encodeTotalResistance, type StoredTotalRes } from './lampComputation';
+import { ingestResistanceData, computeResistancePipeline, buildResistanceResultLayers, encodeTotalResistance, type StoredTotalRes } from './resistancePipeline';
+import type { ResistanceParams } from '../../wasm/resistanceCompute';
 
 const LAMP_CATEGORIES = new Set(['Lights', 'LightSequence']);
+
+const RESISTANCE_CATEGORIES = new Set(['Road', 'River', 'Building', 'GenericResistance']);
+
+const BROWSER_LAYER_IDS = new Set([
+  'road_res', 'river_res', 'landscape_res', 'linear_res',
+  'lamp_res', 'log_lamp_res', 'generic_res',
+  'soft_surf', 'hard_surf',
+  'total_res', 'log_total_res',
+]);
 
 let storedTotalRes: StoredTotalRes | null = null;
 
@@ -34,17 +44,14 @@ interface PipelinePayload {
   roost: RoostInfo | null;
   features: FeaturePayload[];
   lampFeatures: DataFeature[];
+  resistanceFeatures: DataFeature[];
   params: Record<string, number>;
 }
 
 function selectRoost(features: ReadonlyArray<DataFeature>): RoostInfo | null {
   for (const f of features) {
     if (f.category === 'Roost' && f.circle) {
-      return {
-        lng: f.circle.center.lng,
-        lat: f.circle.center.lat,
-        radiusMeters: f.circle.radiusMeters,
-      };
+      return { lng: f.circle.center.lng, lat: f.circle.center.lat, radiusMeters: f.circle.radiusMeters };
     }
   }
   return null;
@@ -74,15 +81,16 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         ctx.onLog?.('error', 'No Roost circle drawn — place a roost first.');
         throw new Error('No roost defined. Place a roost on the map first.');
       }
-      const allFeatures = ctx.features;
-      const nonLampFeatures = allFeatures.filter(f => !LAMP_CATEGORIES.has(f.category));
-      const lampFeatures = allFeatures.filter(f => LAMP_CATEGORIES.has(f.category));
+      const lampFeatures = ctx.features.filter(f => LAMP_CATEGORIES.has(f.category));
+      const resistanceFeatures = ctx.features.filter(f => RESISTANCE_CATEGORIES.has(f.category));
+      const nonLampFeatures = ctx.features.filter(f => !LAMP_CATEGORIES.has(f.category));
       return {
         payload: {
           stage: getStage(),
           roost,
           features: nonLampFeatures.map(featureToPayload),
           lampFeatures: lampFeatures as DataFeature[],
+          resistanceFeatures: resistanceFeatures as DataFeature[],
           params: { ...ctx.params },
         },
       };
@@ -90,13 +98,14 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
 
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { stage, roost, features, lampFeatures, params } = ctx.payload as PipelinePayload;
+      const { stage, roost, features, lampFeatures, resistanceFeatures, params } = ctx.payload as PipelinePayload;
 
       ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features` +
-        (lampFeatures.length > 0 ? ` · ${lampFeatures.length} lamp(s) (browser-side)` : ''));
+        (lampFeatures.length > 0 ? ` · ${lampFeatures.length} lamp(s) (browser-side)` : '') +
+        (resistanceFeatures.length > 0 ? ` · ${resistanceFeatures.length} drawn (browser-side)` : ''));
 
-      if (lampFeatures.length > 0) {
-        ctx.onLog?.('info', 'Lamp irradiance resistance will be computed locally in your browser. Raw lamp positions are not sent to the server.');
+      if (lampFeatures.length > 0 || resistanceFeatures.length > 0) {
+        ctx.onLog?.('info', 'Resistance layers will be computed locally in your browser via WebAssembly.');
       }
 
       const body: Record<string, unknown> = { roost, features, params };
@@ -123,9 +132,8 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         return { layers: [] as ResultLayerEntry[], summary: { status: 'cancelled' } };
       }
 
-      const replacedIds = new Set(['total_res', 'log_total_res']);
       let layers: ResultLayerEntry[] = (job.layers ?? [])
-        .filter(l => !replacedIds.has(l.id))
+        .filter(l => !BROWSER_LAYER_IDS.has(l.id))
         .map((l) => ({
           id: l.id,
           name: l.name,
@@ -133,23 +141,54 @@ export function createHorseshoeBatExecutor(getStage: () => PipelineStage): Execu
         }));
 
       if (stage === 'resistance' && job.raw_tifs && job.raster_extent) {
-        ctx.onLog?.('info', `Computing resistance layers in browser via WebAssembly...`);
+        ctx.onLog?.('info', 'Computing resistance layers in browser via WebAssembly...');
 
         try {
           const extent = job.raster_extent;
-          const { totalRes, lampRes, coverageMask, extractedCount } = await computeLampsWasm(
-            lampFeatures, job.raw_tifs, job.raw_geojson, extent, params,
-            (fraction, label) => {
+
+          const rastParams: ResistanceParams = {
+            road_buffer: params.road_buffer as number,
+            road_resmax: params.road_resmax as number,
+            road_xmax: params.road_xmax as number,
+            river_buffer: params.river_buffer as number,
+            river_resmax: params.river_resmax as number,
+            river_xmax: params.river_xmax as number,
+            landscape_rankmax: params.landscape_rankmax as number,
+            landscape_resmax: params.landscape_resmax as number,
+            landscape_xmax: params.landscape_xmax as number,
+            linear_buffer: params.linear_buffer as number,
+            linear_rankmax: params.linear_rankmax as number,
+            linear_resmax: params.linear_resmax as number,
+            linear_xmax: params.linear_xmax as number,
+            lamp_resmax: params.lamp_resmax as number,
+            lamp_xmax: params.lamp_xmax as number,
+            lamp_ext: params.lamp_ext as number,
+            pixw: extent.pixw,
+            nrows: extent.m,
+            ncols: extent.n,
+          };
+
+          const { pipelineInput, coverageMask, extractedLampCount } = await ingestResistanceData({
+            rawTifs: job.raw_tifs,
+            rawGeojson: job.raw_geojson,
+            features: [...lampFeatures, ...resistanceFeatures],
+            extent,
+            params: rastParams,
+            onProgress: (fraction, label) => {
               ctx.onProgress?.({ step: 'submit', fraction: 0.95 + fraction * 0.05, label });
               ctx.onLog?.('info', label);
             },
-          );
-          layers.push(...(await buildLampResultLayers(totalRes, lampRes, coverageMask, extent)));
-          storedTotalRes = { data: totalRes, extent };
+          });
+
+          const pipelineResult = computeResistancePipeline(pipelineInput);
+
+          layers.push(...(await buildResistanceResultLayers(pipelineResult, coverageMask, extent)));
+          storedTotalRes = { data: pipelineResult.totalRes, extent };
+
           if (lampFeatures.length > 0) {
-            ctx.onLog?.('info', `Lamp irradiance computed browser-side (${extractedCount} point(s)). Total resistance ready for Circuitscape.`);
+            ctx.onLog?.('info', `All resistance layers computed browser-side (${extractedLampCount} lamp point(s)). Total resistance ready for Circuitscape.`);
           } else {
-            ctx.onLog?.('info', 'Total resistance computed browser-side. Ready for Circuitscape.');
+            ctx.onLog?.('info', 'All resistance layers computed browser-side. Total resistance ready for Circuitscape.');
           }
         } catch (wasmErr) {
           const msg = wasmErr instanceof Error ? wasmErr.message : String(wasmErr);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DataFeature } from '@gsbio/engine';
-import { extractLampCoords, applyMask, encodeTotalResistance } from './lampComputation';
+import { extractLampCoords, applyMask, encodeTotalResistance } from './resistancePipeline';
 import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
 
 const EXTENT = {
