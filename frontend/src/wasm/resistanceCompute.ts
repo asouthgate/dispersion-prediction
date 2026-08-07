@@ -111,9 +111,6 @@ export function runPipelineBrowser(
 
   const paramsJson = JSON.stringify(params);
 
-  const condFin = landscapeConductance.filter(v => Number.isFinite(v));
-  console.debug(`[resistanceCompute] runPipelineBrowser input: landscapeConductance length=${landscapeConductance.length}, finite=${condFin.length}, min=${condFin.length ? Math.min(...condFin) : 'none'}, max=${condFin.length ? Math.max(...condFin) : 'none'}`);
-
   const json = run_resistance_pipeline_browser(
     args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
     paramsJson,

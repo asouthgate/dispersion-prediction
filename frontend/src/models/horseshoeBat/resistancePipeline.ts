@@ -209,8 +209,6 @@ export async function ingestResistanceData(
   );
   for (const { k, data } of rasterResults) {
     rasters[k] = data;
-    const fin = data.filter(v => Number.isFinite(v));
-    console.debug(`[resistancePipeline] fetched ${k}: length=${data.length}, finite=${fin.length}, min=${Math.min(...fin)}, max=${Math.max(...fin)}`);
   }
 
   const coverageMask = new Uint8Array(size);
@@ -324,9 +322,6 @@ export async function ingestResistanceData(
  * {@link ingestResistanceData}.
  */
 export function computeResistancePipeline(input: ResistancePipelineInput): ResistanceResult {
-  const cond = (input.landscapeConductance);
-  const condFin = cond.filter(v => Number.isFinite(v));
-  console.debug(`[resistancePipeline] computeResistancePipeline input: landscapeConductance length=${cond.length}, finite=${condFin.length}, min=${condFin.length ? Math.min(...condFin) : 'none'}, max=${condFin.length ? Math.max(...condFin) : 'none'}`);
   const result = runPipelineBrowser(
     input.roads,
     input.rivers,
@@ -338,9 +333,6 @@ export function computeResistancePipeline(input: ResistancePipelineInput): Resis
     input.landscapeConductance,
     input.params,
   );
-  const lr = result.landscapeRes;
-  const lrFin = lr.filter(v => Number.isFinite(v));
-  console.debug(`[resistancePipeline] pipeline result: landscapeRes length=${lr.length}, finite=${lrFin.length}, min=${lrFin.length ? Math.min(...lrFin) : 'none'}, max=${lrFin.length ? Math.max(...lrFin) : 'none'}`);
   return result;
 }
 
