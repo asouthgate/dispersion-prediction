@@ -4,6 +4,7 @@ Writes GeoTIFFs (rasters) and GeoJSON files (vectors) into the work directory
 for the wasm-connectivity resistance-pipeline binary to consume.
 """
 
+import io
 import json
 import logging
 import os
@@ -74,11 +75,11 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         cur.execute(
             pgsql.SQL(
                 """
-                SELECT ST_AsTIFF(
+                SELECT ST_DumpValues(
                     ST_Resample(
                         ST_Union(ST_Clip(rast, geom)),
                         %s, %s
-                    )
+                    ), 1
                 )
                 FROM {},
                      (SELECT ST_MakeEnvelope(%s, %s, %s, %s, 27700) AS geom) AS t2
@@ -90,7 +91,32 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         row = cur.fetchone()
         if row is None or row[0] is None:
             return None
-        return bytes(row[0])
+
+        vals = row[0]
+        if isinstance(vals, str):
+            logger.warning(
+                "ST_DumpValues returned a string; parsing as literal array"
+            )
+            vals = json.loads(vals.replace("{", "[").replace("}", "]"))
+
+        arr = np.array(vals, dtype=np.float32)
+
+        if arr.shape != (nrows, ncols):
+            logger.warning(
+                "ST_DumpValues returned shape %s, expected (%d, %d)",
+                arr.shape, nrows, ncols,
+            )
+            arr = np.zeros((nrows, ncols), dtype=np.float32)
+
+        transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
+        buf = io.BytesIO()
+        with rasterio.open(
+            buf, "w", driver="GTiff", height=nrows, width=ncols,
+            count=1, dtype=np.float32, crs="EPSG:27700",
+            transform=transform, nodata=-9999.0,
+        ) as dst:
+            dst.write(arr, 1)
+        return buf.getvalue()
     finally:
         cur.close()
 
