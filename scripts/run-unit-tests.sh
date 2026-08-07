@@ -25,8 +25,26 @@ fi
 
 cd "$REPO_ROOT"
 echo ""
+echo "=== Frontend unit tests ==="
+if npm --prefix frontend run test; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
+fi
+
+cd "$REPO_ROOT"
+echo ""
 echo "=== Engine unit tests ==="
 if npm --prefix frontend/gsbio-engine run test; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
+fi
+
+cd "$REPO_ROOT"
+echo ""
+echo "=== Wasm-connectivity Rust tests ==="
+if cargo test --lib --manifest-path frontend/wasm-connectivity/Cargo.toml; then
     PASS=$((PASS + 1))
 else
     FAIL=$((FAIL + 1))

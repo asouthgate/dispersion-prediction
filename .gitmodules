@@ -2,3 +2,6 @@
 	path = frontend/gsbio-engine
 	url = https://github.com/asouthgate/gsbio-engine
 	branch = develop
+[submodule "frontend/wasm-connectivity"]
+	path = frontend/wasm-connectivity
+	url = git@github.com:asouthgate/wasm-connectivity.git

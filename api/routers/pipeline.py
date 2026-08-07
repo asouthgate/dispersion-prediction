@@ -160,6 +160,7 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
     roost = req.roost.model_dump() if req.roost else None
     features = [f.model_dump() for f in req.features]
     params = dict(req.params)
+    total_resistance = req.total_resistance.model_dump() if req.total_resistance else None
 
     radius = roost.get("radiusMeters") or roost.get("radius_meters", 2500)
     resolution = params.get("resolution", 10)
@@ -208,7 +209,7 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
     await _register_job(redis, task_id, payload_hash, token)
 
     run_pipeline_task.apply_async(
-        args=(stage, work_dir, roost, features, params),
+        args=(stage, work_dir, roost, features, params, total_resistance),
         task_id=task_id,
     )
 
@@ -234,6 +235,9 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
     progress_label = ""
     error = None
     layers = None
+    raw_tifs = None
+    raw_geojson = None
+    raster_extent = None
     warnings: list[str] = []
 
     if state == "PROGRESS" and isinstance(result.info, dict):
@@ -242,6 +246,9 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
         payload = result.result or {}
         layers_data = payload.get("layers")
         warnings = payload.get("warnings", []) or []
+        raw_tifs = payload.get("raw_tifs")
+        raw_geojson = payload.get("raw_geojson")
+        raster_extent = payload.get("raster_extent")
         progress_label = "Done"
         if layers_data:
             layers = [ResultLayerInfo(**layer) for layer in layers_data]
@@ -267,6 +274,9 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
         error=error,
         warnings=warnings,
         layers=layers,
+        raw_tifs=raw_tifs,
+        raw_geojson=raw_geojson,
+        raster_extent=raster_extent,
     )
 
 

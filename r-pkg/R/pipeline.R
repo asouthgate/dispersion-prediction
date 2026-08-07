@@ -303,6 +303,11 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
     logger::log_info("Calculating surfaces")
     surfs <- calc_surfs(r_dtm, r_dsm, buildings)
 
+    logger::log_info("Writing coverage rasters for client-side computation")
+    writeRaster(surfs$soft_surf, file.path(working_dir, "soft_surf.tif"), "GTiff", overwrite=TRUE)
+    writeRaster(surfs$hard_surf, file.path(working_dir, "hard_surf.tif"), "GTiff", overwrite=TRUE)
+    writeRaster(r_dtm, file.path(working_dir, "dtm.tif"), "GTiff", overwrite=TRUE)
+
     logger::log_info("Calculating lcm resistance")
     landscapeRes <- get_landscape_resistance_lcm(r_lcm, buildings, surfs$soft_surf, algorithm_parameters$landscapeResistance$rankmax,
                                     algorithm_parameters$landscapeResistance$resmax, algorithm_parameters$landscapeResistance$xmax)
@@ -407,9 +412,8 @@ cal_resistance_rasters <- function(algorithm_parameters, working_dir, base_input
 
     return(list(road_res=roadRes, buildings=buildings, river_res=riverRes, 
                 landscape_res=landscapeRes, manhedge=drl$manhedge, unmanhedge=drl$unmanhedge, tree=drl$tree,
-                linear_res=linearRes, lamp_res=lampRes, 
-                total_res=totalRes, soft_surf=surfs$soft_surf, hard_surf=surfs$hard_surf, 
-                log_point_irradiance=log(point_irradiance)))
+                linear_res=linearRes,
+                total_res=totalRes, soft_surf=surfs$soft_surf, hard_surf=surfs$hard_surf))
 
 }
 

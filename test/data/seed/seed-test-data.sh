@@ -20,6 +20,8 @@ fi
 
 "${PSQL[@]}" -q -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 "${PSQL[@]}" -q -c "CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+echo "postgis.gdal_enabled_drivers = 'ENABLE_ALL'" >> "${PGDATA:-/var/lib/postgresql/data}"/postgresql.auto.conf
+"${PSQL[@]}" -q -c "SELECT pg_reload_conf();"
 
 echo "=== seeding ==="
 
