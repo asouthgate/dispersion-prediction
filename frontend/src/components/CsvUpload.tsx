@@ -44,9 +44,18 @@ export function FileUpload() {
         <p className="hint">Loaded {loaded} lamps</p>
       )}
       <p className="gov-notice">
-        By uploading street light data you confirm you have permission to use
-        it. Irradiance resistance is calculated in your browser via
-        WebAssembly — raw lamp positions are never sent to our server.
+        Raw street lamp data and user-imported vector features such as 
+        buildings and roads are confined to your browser and are not 
+        transfered to our server. 
+        Irradiance and other resistance maps are calculated in your browser using
+        WebAssembly.
+        Derived model outputs such as
+        resistance and current maps are processed by our server,
+        but are deleted after processing.
+        We process derived resistance maps temporarily
+        in order to generate the final dispersion map.
+        By uploading your data, you agree
+        to our end user license agreement <a href="/license">here</a>.
       </p>
       {warning && (
         <div className="warning-banner">{warning}</div>

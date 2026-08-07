@@ -19,6 +19,12 @@ from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from pyproj import Transformer
 
+import base64
+import rasterio
+from rasterio.transform import from_bounds
+import numpy as np
+
+
 from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL, RES_CACHE_TTL_SECONDS
 from services.analytics import emit_pipeline_complete
 from services.data_fetch import fetch_resistance_inputs
@@ -300,20 +306,16 @@ def _apply_georeferencing(work_dir: str) -> None:
     rewrite every .tif in work_dir that has a default (0,0)-origin transform
     with the correct georeferencing.
     """
-    import os as _os
 
-    gi_path = _os.path.join(work_dir, "grid_info.json")
-    if not _os.path.exists(gi_path):
+    gi_path = os.path.join(work_dir, "grid_info.json")
+    if not os.path.exists(gi_path):
         logger.debug("No grid_info.json in %s — skipping georeferencing fix", work_dir)
         return
 
-    import json as _json
 
     with open(gi_path) as f:
-        gi = _json.load(f)
+        gi = json.load(f)
 
-    import rasterio
-    from rasterio.transform import from_bounds
 
     ref_transform = from_bounds(
         gi["xmin"],
@@ -325,10 +327,10 @@ def _apply_georeferencing(work_dir: str) -> None:
     )
 
     fixed = 0
-    for fname in sorted(_os.listdir(work_dir)):
+    for fname in sorted(os.listdir(work_dir)):
         if not fname.endswith(".tif"):
             continue
-        path = _os.path.join(work_dir, fname)
+        path = os.path.join(work_dir, fname)
         try:
             with rasterio.open(path) as src:
                 if src.transform.c != 0.0 or src.transform.f != 0.0:
@@ -353,11 +355,11 @@ def _apply_georeferencing(work_dir: str) -> None:
                 nodata=-9999.0,
             ) as dst:
                 dst.write(data, 1)
-            _os.replace(tmp_path, path)
+            os.replace(tmp_path, path)
             fixed += 1
         except Exception:
             try:
-                _os.unlink(tmp_path)
+                os.unlink(tmp_path)
             except OSError:
                 pass
             raise
@@ -601,10 +603,6 @@ def _cleanup_token_job(task_id: str, success: bool) -> None:
 
 def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any]) -> None:
     """Decode browser-computed total resistance and write as GeoTIFF + ASC."""
-    import base64
-    import numpy as np
-    import rasterio
-    from rasterio.transform import from_bounds
 
     extent = total_res["extent"]
     m = extent["m"]

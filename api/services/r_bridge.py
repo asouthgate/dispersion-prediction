@@ -132,7 +132,7 @@ def _write_input_files(
             pass  # roost handled separately
 
     if lamp_count > 0:
-        logger.info("Skipped %d lamp feature(s) — computed browser-side via WASM", lamp_count)
+        logger.info("Skipped %d lamp feature(s): delegating to browser-side", lamp_count)
 
     # Write GeoPackage files per category (geometries transformed to BNG)
     for cat, feats in by_category.items():
@@ -267,11 +267,10 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
 
 def collect_raster_info(work_dir: str) -> dict | None:
     """Read raster extent metadata from the first GeoTIFF in the work dir."""
-    import os as _os
     try:
-        for fname in _os.listdir(work_dir):
+        for fname in os.listdir(work_dir):
             if fname.endswith('.tif'):
-                path = _os.path.join(work_dir, fname)
+                path = os.path.join(work_dir, fname)
                 import rasterio
                 with rasterio.open(path) as src:
                     return {

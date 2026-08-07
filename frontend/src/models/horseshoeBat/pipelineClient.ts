@@ -45,12 +45,15 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+// Run a pipeline job in the backend, polling for status and logs until completion or failure.
+// Returns the final job status.
 export async function runPipelineJob(
   stage: PipelineStage,
   body: Record<string, unknown>,
   signal: AbortSignal,
   ctx: JobContext,
 ): Promise<JobStatus> {
+  // Start the pipeline job
   const startRes = await fetchWithAuth(`${API_BASE}/pipeline/${stage}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -75,6 +78,7 @@ export async function runPipelineJob(
   };
   signal.addEventListener('abort', onAbort, { once: true });
 
+  // Poll for job status and logs
   try {
     let job: JobStatus = {
       job_id, status: 'pending', progress: 0, progress_label: '', error: null, warnings: [],
@@ -108,7 +112,7 @@ export async function runPipelineJob(
     }
 
     if (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled') {
-      throw new Error('Pipeline timed out — it took longer than expected. Try a smaller area or contact support.');
+      throw new Error('Pipeline timed out: it took longer than expected. Try a smaller area or contact support.');
     }
 
     try {

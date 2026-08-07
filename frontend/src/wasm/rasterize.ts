@@ -53,14 +53,17 @@ export function rasterToPngBlobUrl(data: Float32Array, m: number, n: number): Pr
   if (!ctx) return Promise.resolve('');
   const imgData = ctx.createImageData(n, m);
 
+  const PALETTE_SIZE = MAGMA.length / 3;
   for (let i = 0; i < data.length; i++) {
     const v = data[i];
     const px = i * 4;
     if (Number.isFinite(v)) {
-      const idx = Math.min(255, Math.max(0, Math.floor(((v - min) / range) * 255))) * 3;
-      imgData.data[px] = MAGMA[idx];
-      imgData.data[px + 1] = MAGMA[idx + 1];
-      imgData.data[px + 2] = MAGMA[idx + 2];
+      const normalized = Math.max(0, Math.min(1, (v - min) / range));
+      const colorIdx = Math.min(PALETTE_SIZE - 1, Math.floor(normalized * PALETTE_SIZE));
+      const byteOffset = colorIdx * 3;
+      imgData.data[px]     = MAGMA[byteOffset];
+      imgData.data[px + 1] = MAGMA[byteOffset + 1];
+      imgData.data[px + 2] = MAGMA[byteOffset + 2];
       imgData.data[px + 3] = 255;
     } else {
       imgData.data[px + 3] = 0;
