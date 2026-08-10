@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import JSZip from 'jszip';
 import type { PipelineStage } from '../models/horseshoeBat';
-import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDimensions, computeMinResolution } from '@gsbio/engine';
+import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDimensions, computeMinResolution, extractResultLayers } from '@gsbio/engine';
 import type { RunLogEntry, DataFeature } from '@gsbio/engine';
 import { RunPanel, ResultsPanel } from '@gsbio/engine';
 import { RunLogModal } from './RunLogModal';
@@ -51,11 +52,30 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
 
   const handleDownload = async (runId: string): Promise<void> => {
     const rec = engine.findRun(runId);
-    if (!rec?.result || !rec.taskId) return;
+    if (!rec?.result) return;
     try {
-      const res = await fetchWithAuth(`/api/rasters/${rec.taskId}/download`);
-      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-      const blob = await res.blob();
+      const zip = new JSZip();
+
+      if (rec.taskId) {
+        const res = await fetchWithAuth(`/api/rasters/${rec.taskId}/download`);
+        if (res.ok) {
+          const serverZip = await JSZip.loadAsync(await res.blob());
+          for (const [filename, file] of Object.entries(serverZip.files)) {
+            if (!file.dir) zip.file(filename, file.async('blob'));
+          }
+        }
+      }
+
+      for (const layer of extractResultLayers(rec.result)) {
+        if (layer.envelope.kind === 'image') {
+          const imgRes = await fetch(layer.envelope.url);
+          if (imgRes.ok) {
+            zip.file(`images/${layer.name ?? layer.id}.png`, await imgRes.blob());
+          }
+        }
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
