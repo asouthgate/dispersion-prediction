@@ -4,6 +4,7 @@ Writes GeoTIFFs (rasters) and GeoJSON files (vectors) into the work directory
 for the wasm-connectivity resistance-pipeline binary to consume.
 """
 
+import io
 import json
 import logging
 import os
@@ -74,15 +75,22 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         cur.execute(
             pgsql.SQL(
                 """
-                SELECT ST_AsTIFF(
-                    ST_Resample(
+                WITH resampled AS (
+                    SELECT ST_Resample(
                         ST_Union(ST_Clip(rast, geom)),
                         %s, %s
-                    )
+                    ) AS rast
+                    FROM {},
+                         (SELECT ST_MakeEnvelope(%s, %s, %s, %s, 27700) AS geom) AS t2
+                    WHERE tile_extent && t2.geom
                 )
-                FROM {},
-                     (SELECT ST_MakeEnvelope(%s, %s, %s, %s, 27700) AS geom) AS t2
-                WHERE tile_extent && t2.geom
+                SELECT
+                    ST_DumpValues(rast, 1),
+                    ST_XMin(ST_Envelope(rast)),
+                    ST_YMin(ST_Envelope(rast)),
+                    ST_XMax(ST_Envelope(rast)),
+                    ST_YMax(ST_Envelope(rast))
+                FROM resampled
                 """
             ).format(pgsql.Identifier(table)),
             (ncols, nrows, xmin, ymin, xmax, ymax),
@@ -90,7 +98,30 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         row = cur.fetchone()
         if row is None or row[0] is None:
             return None
-        return bytes(row[0])
+
+        vals, rxmin, rymin, rxmax, rymax = row
+
+        if isinstance(vals, str):
+            vals = json.loads(vals.replace("{", "[").replace("}", "]"))
+
+        arr = np.array(vals, dtype=np.float32)
+
+        if arr.shape != (nrows, ncols):
+            logger.warning(
+                "ST_DumpValues returned shape %s, expected (%d, %d)",
+                arr.shape, nrows, ncols,
+            )
+            arr = np.zeros((nrows, ncols), dtype=np.float32)
+
+        transform = from_bounds(rxmin, rymin, rxmax, rymax, ncols, nrows)
+        buf = io.BytesIO()
+        with rasterio.open(
+            buf, "w", driver="GTiff", height=nrows, width=ncols,
+            count=1, dtype=np.float32, crs="EPSG:27700",
+            transform=transform, nodata=-9999.0,
+        ) as dst:
+            dst.write(arr, 1)
+        return buf.getvalue()
     finally:
         cur.close()
 
