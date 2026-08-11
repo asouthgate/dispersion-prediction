@@ -58,7 +58,7 @@ class RasterServingTests(unittest.TestCase):
                             with patch("services.raster_service.tif_to_png", side_effect=OSError("bad tif")):
 
                                 async def call():
-                                    return await get_raster_png("job", "bad-layer")
+                                    return await get_raster_png("job", "dtm")
 
                                 with self.assertRaises(Exception) as ctx:
                                     asyncio.run(call())
