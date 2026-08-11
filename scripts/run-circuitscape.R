@@ -26,6 +26,13 @@ if (file.exists(log_current_src)) {
     logger::log_info("Copied log_current to %s", log_current_dest)
 }
 
+current_src  <- file.path(working_dir, "circuitscape", "current.tif")
+current_dest <- file.path(working_dir, "current.tif")
+if (file.exists(current_src)) {
+    raster::writeRaster(raster::raster(current_src), current_dest, "GTiff", overwrite = TRUE)
+    logger::log_info("Copied current to %s", current_dest)
+}
+
 if (file.exists(input_path) && file.exists(log_current_src)) {
     inputs <- jsonlite::fromJSON(input_path, simplifyVector = FALSE)
     roost_bng <- inputs$roost

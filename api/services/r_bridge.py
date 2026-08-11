@@ -241,6 +241,7 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
         ("hard_surf", "Hard Surface"),
         ("generic_res", "Generic Resistance"),
         ("log_current", "Log Current"),
+        ("current", "Current"),
     ]
 
     found_ids = []

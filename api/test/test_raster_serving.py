@@ -58,40 +58,11 @@ class RasterServingTests(unittest.TestCase):
                             with patch("services.raster_service.tif_to_png", side_effect=OSError("bad tif")):
 
                                 async def call():
-                                    return await get_raster_png("job", "bad-layer")
+                                    return await get_raster_png("job", "dtm")
 
                                 with self.assertRaises(Exception) as ctx:
                                     asyncio.run(call())
                                 self.assertEqual(ctx.exception.status_code, 500)
-
-    def test_download_missing_job_dir_returns_404(self):
-        import asyncio
-        from routers.rasters import download_results
-
-        with patch("routers.rasters._resolve_task_id", new=AsyncMock(return_value="dummy-hash")):
-            with patch("routers.rasters.os.path.isdir", return_value=False):
-
-                async def call():
-                    return await download_results("no-job")
-
-                with self.assertRaises(Exception) as ctx:
-                    asyncio.run(call())
-                self.assertEqual(ctx.exception.status_code, 404)
-
-    def test_download_no_files_returns_404(self):
-        import asyncio
-        from routers.rasters import download_results
-
-        with patch("routers.rasters._resolve_task_id", new=AsyncMock(return_value="dummy-hash")):
-            with patch("routers.rasters.os.path.isdir", return_value=True):
-                with patch("routers.rasters.os.listdir", return_value=[]):
-
-                    async def call():
-                        return await download_results("empty-job")
-
-                    with self.assertRaises(Exception) as ctx:
-                        asyncio.run(call())
-                    self.assertEqual(ctx.exception.status_code, 404)
 
 
 if __name__ == "__main__":

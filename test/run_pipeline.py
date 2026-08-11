@@ -204,22 +204,6 @@ def download_results(base: str, job_id: str, layers: list[dict[str, Any]], out_d
         except Exception as e:
             print(f"FAILED: {e}")
 
-    if not layers:
-        print("  WARN: no layers, skipping results.zip download")
-        return
-
-    work_dir = layers[0]["url"].split("/")[3]
-
-    print(f"\n  Downloading results.zip ...", end=" ")
-    try:
-        data = api_get_bytes(f"{base}/api/rasters/{work_dir}/download")
-        zip_path = os.path.join(out_dir, "results.zip")
-        with open(zip_path, "wb") as f:
-            f.write(data)
-        print(f"OK ({len(data) / 1024:.1f} KB)")
-    except Exception as e:
-        print(f"FAILED: {e}")
-
 
 def display_layer_info(layers: list[dict[str, Any]]):
     if not layers:

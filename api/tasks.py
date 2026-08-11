@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import psycopg2
 import signal
 import shutil as _shutil
 import subprocess
@@ -17,6 +18,7 @@ from typing import Any
 import redis as _sync_redis
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
+from PIL import Image
 from pyproj import Transformer
 
 import base64
@@ -27,9 +29,9 @@ import numpy as np
 
 from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL, RES_CACHE_TTL_SECONDS
 from services.analytics import emit_pipeline_complete
-from services.data_fetch import fetch_resistance_inputs
 from services.r_bridge import _write_input_files as wif, collect_results, collect_raster_info, wgs84_to_bng
 from services.raster_service import get_bounds_for_tif, tif_to_png
+from services.data_fetch import fetch_landscape_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -225,12 +227,12 @@ def _run_coverage(
     _run_r_pipeline(task, work_dir, "coverage", roost, features, params)
 
     layers_raw = collect_results(work_dir)
-    coverage_keys = {"dtm", "dsm", "lcm"}
+    coverage_keys = {"dtm", "dsm"}
     coverage_found = {l["id"] for l in layers_raw if l["id"] in coverage_keys}
     logger.info("Coverage layers found: %s (expected: %s)", coverage_found, coverage_keys)
     layers_raw = [l for l in layers_raw if l["id"] in coverage_keys]
 
-    colormaps = {"dtm": "terrain", "dsm": "terrain", "lcm": "tab20"}
+    colormaps = {"dtm": "terrain", "dsm": "terrain"}
 
     easting, northing = wgs84_to_bng(roost["lng"], roost["lat"])
     radius = roost.get("radiusMeters", roost.get("radius_meters", 2500))
@@ -252,12 +254,46 @@ def _run_coverage(
             "bounds": list(bounds_wgs84),
         })
 
+    dtm_tif = os.path.join(work_dir, "dtm.tif")
+    if os.path.exists(dtm_tif):
+        coverage_png_path = os.path.join(work_dir, "images", "coverage.png")
+        _render_coverage_png(dtm_tif, coverage_png_path)
+        layers.append({
+            "id": "coverage",
+            "name": "LCM Coverage",
+            "url": f"/api/rasters/{task.request.id}/coverage.png",
+            "bounds": list(bounds_wgs84),
+        })
+
     elapsed = time.monotonic() - t0
     if not layers:
         raise RuntimeError("Coverage pipeline produced no result layers — check database raster data")
 
     logger.info("Coverage pipeline completed in %.1fs, %d layers", elapsed, len(layers))
     return layers, []
+
+
+def _render_coverage_png(dtm_tif: str, png_path: str) -> None:
+    """Generate a binary coverage PNG from a DTM GeoTIFF.
+
+    Blue (#0000FF) where DTM has valid data, transparent elsewhere.
+    """
+
+    with rasterio.open(dtm_tif) as src:
+        data = src.read(1)
+        nodata = src.nodata
+
+    if nodata is not None:
+        valid = np.isfinite(data) & (data != nodata)
+    else:
+        valid = np.isfinite(data)
+
+    rgba = np.zeros((data.shape[0], data.shape[1], 4), dtype=np.uint8)
+    rgba[valid, 2] = 255
+    rgba[valid, 3] = 255
+
+    os.makedirs(os.path.dirname(png_path), exist_ok=True)
+    Image.fromarray(rgba, "RGBA").save(png_path, "PNG")
 
 
 def _bng_to_wgs84(extent_bng: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
@@ -377,21 +413,17 @@ def _apply_georeferencing(work_dir: str) -> None:
         )
 
 
-def _run_r_pipeline(
-    task,
-    work_dir: str,
+def _build_pipeline_cmd(
     stage: str,
+    work_dir: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
     params: dict[str, int | float],
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Run an R pipeline script via subprocess.
+) -> tuple[bool, list[str], str, dict[str, str]]:
+    """Resolve the subprocess command for a pipeline stage.
 
-    ``task`` is the bound Celery task instance, used for cancellation checks.
-    Returns (layers, warnings).
+    Returns (use_binary, cmd, cwd, env).
     """
-    t0 = time.monotonic()
-
     wif(work_dir, roost, features, params)
 
     r_script_map = {
@@ -408,7 +440,6 @@ def _run_r_pipeline(
         if not binary_path:
             raise RuntimeError(f"Binary not found: {binary_map[stage]}")
         logger.info("Fetching DB data for landscape resistance...")
-        from services.data_fetch import fetch_landscape_inputs
         fetch_landscape_inputs(work_dir)
         cmd = [binary_path, work_dir, "--stage", "landscape"]
         cwd = work_dir
@@ -425,7 +456,17 @@ def _run_r_pipeline(
         env = os.environ.copy()
         env["R_PIPELINE_WORKDIR"] = work_dir
 
-    logger.info("Running pipeline: stage=%s cmd=%s", stage, cmd[0])
+    return use_binary, cmd, cwd, env
+
+
+def _run_subprocess(
+    task, cmd: list[str], cwd: str, env: dict[str, str]
+) -> tuple[str, str, int]:
+    """Run a subprocess with log piping, cancellation, and timeout.
+
+    Returns (stdout, stderr, returncode).
+    """
+    logger.info("Running pipeline: cmd=%s", cmd[0])
     proc = None
     task_id = task.request.id
 
@@ -442,7 +483,6 @@ def _run_r_pipeline(
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             start_new_session=True,
         )
-        # Guard the cancellation race
         is_cancelled = getattr(task.request, "is_cancelled", None)
         if callable(is_cancelled) and is_cancelled():
             logger.info("Task was already cancelled; terminating process group")
@@ -451,7 +491,7 @@ def _run_r_pipeline(
                 proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 pass
-            return [], []
+            return "", "", proc.returncode
 
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
@@ -497,12 +537,11 @@ def _run_r_pipeline(
         t_out.join(timeout=10)
         t_err.join(timeout=10)
 
-        stdout = "".join(stdout_lines)
-        stderr = "".join(stderr_lines)
+        return "".join(stdout_lines), "".join(stderr_lines), proc.returncode
     except FileNotFoundError:
-        if use_binary:
+        if cmd[0] == "resistance-pipeline":
             raise RuntimeError(
-                f"Pipeline binary not found: {binary_map[stage]}. "
+                "Pipeline binary not found: resistance-pipeline. "
                 "Resistance pipeline requires the Rust binary."
             )
         raise RuntimeError(
@@ -521,24 +560,9 @@ def _run_r_pipeline(
     finally:
         signal.signal(signal.SIGTERM, old_handler)
 
-    warnings = re.findall(r'WARN\s+\[.*?\]\s+(.*)', stderr or "")
 
-    if proc.returncode != 0:
-        is_cancelled = getattr(task.request, "is_cancelled", None)
-        if callable(is_cancelled) and is_cancelled():
-            logger.info("Pipeline was cancelled (rc=%d), not treating as error", proc.returncode)
-            return [], warnings
-        stderr_tail = (stderr or "")[-500:] or "(no output)"
-        logger.error("Pipeline failed (rc=%d): %s", proc.returncode, stderr_tail)
-        raise RuntimeError(f"Pipeline failed (rc={proc.returncode}): {stderr_tail[:300]}")
-
-    if use_binary:
-        lcm_path = os.path.join(work_dir, "lcm.tif")
-        if os.path.exists(lcm_path):
-            os.unlink(lcm_path)
-            logger.info("Removed lcm.tif — LCM stays server-side")
-        _apply_georeferencing(work_dir)
-
+def _build_result_layers(work_dir: str, task_id: str) -> list[dict[str, Any]]:
+    """Collect layer GeoTIFFs, convert to PNGs, return API-ready layer dicts."""
     layers_raw = collect_results(work_dir)
     if not layers_raw:
         raise RuntimeError(
@@ -547,13 +571,6 @@ def _run_r_pipeline(
             "the database may not have raster data covering this location."
         )
 
-    plot_script = os.path.join(REPO_ROOT, "test", "plot_outputs.R")
-    if os.path.exists(plot_script):
-        logger.info("Generating diagnostic plots...")
-        subprocess.run(
-            ["Rscript", "--no-init-file", plot_script, work_dir],
-            cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
-        )
     for layer in layers_raw:
         tif_path = layer["tif_path"]
         png_path = os.path.join(work_dir, "images", f"{layer['id']}.png")
@@ -572,9 +589,46 @@ def _run_r_pipeline(
         result_layers.append({
             "id": layer["id"],
             "name": layer["name"],
-            "url": f"/api/rasters/{task.request.id}/{layer['id']}.png",
+            "url": f"/api/rasters/{task_id}/{layer['id']}.png",
             "bounds": list(bounds),
         })
+
+    return result_layers
+
+
+def _run_r_pipeline(
+    task,
+    work_dir: str,
+    stage: str,
+    roost: dict[str, Any] | None,
+    features: list[dict[str, Any]],
+    params: dict[str, int | float],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run a pipeline stage via subprocess and build result layers."""
+    t0 = time.monotonic()
+
+    use_binary, cmd, cwd, env = _build_pipeline_cmd(stage, work_dir, roost, features, params)
+    stdout, stderr, returncode = _run_subprocess(task, cmd, cwd, env)
+
+    warnings = re.findall(r'WARN\s+\[.*?\]\s+(.*)', stderr or "")
+
+    if returncode != 0:
+        is_cancelled = getattr(task.request, "is_cancelled", None)
+        if callable(is_cancelled) and is_cancelled():
+            logger.info("Pipeline was cancelled (rc=%d), not treating as error", returncode)
+            return [], warnings
+        stderr_tail = (stderr or "")[-500:] or "(no output)"
+        logger.error("Pipeline failed (rc=%d): %s", returncode, stderr_tail)
+        raise RuntimeError(f"Pipeline failed (rc={returncode}): {stderr_tail[:300]}")
+
+    if use_binary:
+        lcm_path = os.path.join(work_dir, "lcm.tif")
+        if os.path.exists(lcm_path):
+            os.unlink(lcm_path)
+            logger.info("Removed lcm.tif — LCM stays server-side")
+        _apply_georeferencing(work_dir)
+
+    result_layers = _build_result_layers(work_dir, task.request.id)
 
     elapsed = time.monotonic() - t0
     logger.info("R pipeline completed in %.1fs, %d layers, %d warnings", elapsed, len(result_layers), len(warnings))
@@ -821,8 +875,6 @@ def prune_umami_events() -> None:
     if not db_url:
         return
     days = int(os.environ.get("UMAMI_RETENTION_DAYS", "180"))
-
-    import psycopg2
 
     try:
         conn = psycopg2.connect(db_url)
