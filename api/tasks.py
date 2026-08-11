@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import psycopg2
 import signal
 import shutil as _shutil
 import subprocess
@@ -17,6 +18,7 @@ from typing import Any
 import redis as _sync_redis
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
+from PIL import Image
 from pyproj import Transformer
 
 import base64
@@ -27,9 +29,9 @@ import numpy as np
 
 from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL, RES_CACHE_TTL_SECONDS
 from services.analytics import emit_pipeline_complete
-from services.data_fetch import fetch_resistance_inputs
 from services.r_bridge import _write_input_files as wif, collect_results, collect_raster_info, wgs84_to_bng
 from services.raster_service import get_bounds_for_tif, tif_to_png
+from services.data_fetch import fetch_landscape_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +278,6 @@ def _render_coverage_png(dtm_tif: str, png_path: str) -> None:
 
     Blue (#0000FF) where DTM has valid data, transparent elsewhere.
     """
-    from PIL import Image
 
     with rasterio.open(dtm_tif) as src:
         data = src.read(1)
@@ -439,7 +440,6 @@ def _build_pipeline_cmd(
         if not binary_path:
             raise RuntimeError(f"Binary not found: {binary_map[stage]}")
         logger.info("Fetching DB data for landscape resistance...")
-        from services.data_fetch import fetch_landscape_inputs
         fetch_landscape_inputs(work_dir)
         cmd = [binary_path, work_dir, "--stage", "landscape"]
         cwd = work_dir
@@ -875,8 +875,6 @@ def prune_umami_events() -> None:
     if not db_url:
         return
     days = int(os.environ.get("UMAMI_RETENTION_DAYS", "180"))
-
-    import psycopg2
 
     try:
         conn = psycopg2.connect(db_url)
