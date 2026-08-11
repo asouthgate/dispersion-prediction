@@ -462,6 +462,13 @@ call_circuitscape <- function(working_dir, save_images) {
         overwrite=TRUE
     )
 
+    writeRaster(
+        current,
+        paste0(working_dir, "/circuitscape/current.tif"),
+        "GTiff",
+        overwrite=TRUE
+    )
+
     if (save_images) { 
         save_image(current, "current.png", working_dir)
         save_image(logCurrent, "log_current.png", working_dir)

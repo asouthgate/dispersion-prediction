@@ -55,26 +55,15 @@ export function GeneratePanel({ stage, onStageChange }: GeneratePanelProps) {
     if (!rec?.result) return;
     try {
       const zip = new JSZip();
-
-      if (rec.taskId) {
-        const res = await fetchWithAuth(`/api/rasters/${rec.taskId}/download`);
-        if (res.ok) {
-          const serverZip = await JSZip.loadAsync(await res.blob());
-          for (const [filename, file] of Object.entries(serverZip.files)) {
-            if (!file.dir) zip.file(filename, file.async('blob'));
-          }
-        }
-      }
-
       for (const layer of extractResultLayers(rec.result)) {
-        if (layer.envelope.kind === 'image') {
-          const imgRes = await fetch(layer.envelope.url);
-          if (imgRes.ok) {
-            zip.file(`images/${layer.name ?? layer.id}.png`, await imgRes.blob());
-          }
+        if (layer.envelope.kind !== 'image') continue;
+        const isWasm = layer.envelope.url.startsWith('blob:');
+        const res = isWasm ? await fetch(layer.envelope.url) : await fetchWithAuth(layer.envelope.url);
+        if (res.ok) {
+          const name = (layer.name ?? layer.id).toLowerCase().replace(/\s+/g, '_');
+          zip.file(`${name}.png`, await res.blob());
         }
       }
-
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

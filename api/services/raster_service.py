@@ -101,12 +101,3 @@ def get_bounds_for_tif(tif_path: str) -> tuple[float, float, float, float]:
         west, south = transformer.transform(left, bottom)
         east, north = transformer.transform(right, top)
         return (west, south, east, north)
-
-
-def create_zip_archive(file_paths: list[str], zip_path: str) -> None:
-    """Create a ZIP archive of the given files."""
-    import zipfile
-    os.makedirs(os.path.dirname(zip_path), exist_ok=True)
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fp in file_paths:
-            zf.write(fp, os.path.basename(fp))
