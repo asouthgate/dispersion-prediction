@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
 from middleware.auth import require_auth
+from services.access import check_job_access
 from services.redis import get_redis
 
 logger = logging.getLogger(__name__)
@@ -24,15 +25,6 @@ _VALID_LAYER_IDS = frozenset({
 })
 
 
-async def _resolve_task_id(task_id: str) -> str:
-    """Look up the internal work-directory hash for a Celery task ID."""
-    redis = get_redis()
-    h = await redis.get(f"task_to_hash:{task_id}")
-    if not h:
-        raise HTTPException(status_code=404, detail="Job not found or results expired")
-    return h
-
-
 def _get_job_dir(task_id: str) -> str:
     base = os.environ.get("PIPELINE_WORK_DIR", "/tmp/circuitscape")
     return os.path.join(base, task_id)
@@ -46,14 +38,14 @@ def _render_png(tif_path: str, png_path: str, circular_mask: bool, colormap: str
 
 
 @router.get("/{task_id}/{layer}.png")
-async def get_raster_png(task_id: str, layer: str, _token: str = Depends(require_auth)):
+async def get_raster_png(task_id: str, layer: str, token: str = Depends(require_auth)):
     """Serve a raster layer as a PNG image."""
     if not re.match(r'^[a-zA-Z0-9_-]+$', layer):
         raise HTTPException(status_code=400, detail="Invalid layer name")
     if layer not in _VALID_LAYER_IDS:
         raise HTTPException(status_code=404, detail=f"Unknown layer: {layer}")
-    h = await _resolve_task_id(task_id)
-    job_dir = _get_job_dir(h)
+    await check_job_access(get_redis(), task_id, token)
+    job_dir = _get_job_dir(task_id)
     png_path = os.path.join(job_dir, "images", f"{layer}.png")
 
     if not os.path.exists(png_path):
@@ -85,12 +77,12 @@ async def get_raster_png(task_id: str, layer: str, _token: str = Depends(require
 
 
 @router.get("/{task_id}/raw/{layer}.tif")
-async def get_raw_tif(task_id: str, layer: str, _token: str = Depends(require_auth)):
+async def get_raw_tif(task_id: str, layer: str, token: str = Depends(require_auth)):
     """Serve a raw GeoTIFF for client-side computation."""
     if not re.match(r'^[a-zA-Z0-9_-]+$', layer):
         raise HTTPException(status_code=400, detail="Invalid layer name")
-    h = await _resolve_task_id(task_id)
-    job_dir = _get_job_dir(h)
+    await check_job_access(get_redis(), task_id, token)
+    job_dir = _get_job_dir(task_id)
     tif_path = os.path.join(job_dir, f"{layer}.tif")
     if not os.path.exists(tif_path):
         raise HTTPException(status_code=404, detail=f"Raw raster {layer} not found")
@@ -102,12 +94,12 @@ async def get_raw_tif(task_id: str, layer: str, _token: str = Depends(require_au
 
 
 @router.get("/{task_id}/raw/{layer}.geojson")
-async def get_raw_geojson(task_id: str, layer: str, _token: str = Depends(require_auth)):
+async def get_raw_geojson(task_id: str, layer: str, token: str = Depends(require_auth)):
     """Serve a raw GeoJSON file for client-side rasterization."""
     if not re.match(r'^[a-zA-Z0-9_-]+$', layer):
         raise HTTPException(status_code=400, detail="Invalid layer name")
-    h = await _resolve_task_id(task_id)
-    job_dir = _get_job_dir(h)
+    await check_job_access(get_redis(), task_id, token)
+    job_dir = _get_job_dir(task_id)
     gj_path = os.path.join(job_dir, f"{layer}.geojson")
     if not os.path.exists(gj_path):
         raise HTTPException(status_code=404, detail=f"Raw GeoJSON {layer} not found")

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -27,7 +26,7 @@ from rasterio.transform import from_bounds
 import numpy as np
 
 
-from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL, RES_CACHE_TTL_SECONDS
+from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL
 from services.analytics import emit_pipeline_complete
 from services.r_bridge import _write_input_files as wif, collect_results, collect_raster_info, wgs84_to_bng
 from services.raster_service import get_bounds_for_tif, tif_to_png
@@ -94,99 +93,6 @@ def _create_work_dir(job_id: str) -> str:
     os.makedirs(os.path.join(work_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(work_dir, "circuitscape"), exist_ok=True)
     return work_dir
-
-
-def _payload_hash(
-    stage: str,
-    roost: dict[str, Any] | None,
-    features: list[dict[str, Any]],
-    params: dict[str, int | float],
-) -> str:
-    """Hash the pipeline payload to derive a cache-friendly work directory name."""
-    payload = {"stage": stage, "roost": roost, "features": features, "params": params}
-    raw = json.dumps(payload, sort_keys=True, default=str)
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
-
-
-def _payload_hash_ns(
-    roost: dict[str, Any] | None,
-    features: list[dict[str, Any]],
-    params: dict[str, int | float],
-) -> str:
-    """Hash for cross-stage cache lookups (resistance -> current)."""
-    payload = {"roost": roost, "features": features, "params": params}
-    raw = json.dumps(payload, sort_keys=True, default=str)
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
-
-
-def _touch_res_cache(res_hash: str) -> None:
-    """Extend the TTL of cached resistance results so they survive a long-running Current stage."""
-    try:
-        r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
-        key = f"pipeline:res_cache:{res_hash}"
-        r.expire(key, RES_CACHE_TTL_SECONDS)
-        r.close()
-    except Exception:
-        pass
-
-
-def _store_resistance_cache(
-    roost: dict[str, Any],
-    features: list[dict[str, Any]],
-    params: dict[str, int | float],
-    work_dir: str,
-) -> None:
-    """Store a Redis pointer to completed resistance results for reuse by Current."""
-    res_hash = _payload_hash_ns(roost, features, params)
-    try:
-        r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
-        r.set(f"pipeline:res_cache:{res_hash}", work_dir, ex=RES_CACHE_TTL_SECONDS)
-        r.close()
-        logger.info("Stored resistance cache: hash=%s work_dir=%s", res_hash, work_dir)
-    except Exception as e:
-        logger.warning("Failed to store resistance cache: %s", e)
-
-
-def _try_reuse_resistance_cache(
-    roost: dict[str, Any],
-    features: list[dict[str, Any]],
-    params: dict[str, int | float],
-    work_dir: str,
-) -> bool:
-    """Attempt to reuse cached resistance ASC files from a previous Resistance run.
-
-    Looks up the stage-agnostic payload hash in Redis and copies the
-    circuitscape directory if found and still valid.  Refreshes the TTL
-    first so that long-running Current stages don't lose the cache mid-run.
-    Returns True if the cache was reused, False otherwise.
-    """
-    res_hash = _payload_hash_ns(roost, features, params)
-    try:
-        r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
-        cached_dir = r.get(f"pipeline:res_cache:{res_hash}")
-        r.close()
-    except Exception as e:
-        logger.warning("Failed to read resistance cache: %s", e)
-        return False
-
-    if not cached_dir:
-        return False
-
-    src_asc = os.path.join(cached_dir, "circuitscape", "ground.asc")
-    if not os.path.exists(src_asc):
-        logger.info("Cached resistance work_dir gone, ignoring: %s", cached_dir)
-        return False
-
-    _touch_res_cache(res_hash)
-    logger.info("Reusing cached resistance from %s → %s", cached_dir, work_dir)
-    dst_dir = os.path.join(work_dir, "circuitscape")
-    os.makedirs(dst_dir, exist_ok=True)
-    for fname in os.listdir(os.path.join(cached_dir, "circuitscape")):
-        src = os.path.join(cached_dir, "circuitscape", fname)
-        dst = os.path.join(dst_dir, fname)
-        if os.path.isfile(src) and not os.path.exists(dst):
-            _shutil.copy2(src, dst)
-    return True
 
 
 def _write_input_files(
@@ -635,22 +541,14 @@ def _run_r_pipeline(
     return result_layers, warnings
 
 
-def _cleanup_token_job(task_id: str, success: bool) -> None:
-    """Clear per-token job keys and the in-flight marker for a finished task.
-
-    On failure the dedup key is also cleared so a retry of the same payload
-    starts a fresh job instead of being handed back the failed one.
-    """
+def _cleanup_token_job(task_id: str) -> None:
+    """Clear per-token job keys and the in-flight marker for a finished task."""
     try:
         r = _sync_redis.Redis.from_url(AUTH_REDIS_URL, decode_responses=True)
         token = r.get(f"job:token:{task_id}")
         if token:
             r.delete(f"job:by_token:{token}", f"job:token:{task_id}")
         r.srem("jobs:inflight", task_id)
-        if not success:
-            h = r.get(f"task_to_hash:{task_id}")
-            if h:
-                r.delete(f"dedup:{h}", f"task_to_hash:{task_id}")
         r.close()
     except Exception:
         pass
@@ -671,6 +569,11 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roo
     xmax = extent["xmax"]
     ymax = extent["ymax"]
     raw = base64.b64decode(total_res["data_base64"])
+    expected = m * n * 4
+    if len(raw) != expected:
+        raise ValueError(
+            f"Total resistance data size mismatch: expected {expected} bytes, got {len(raw)}"
+        )
     arr = np.frombuffer(raw, dtype="<f4").reshape((m, n))
 
     tif_path = os.path.join(work_dir, "total_res.tif")
@@ -755,7 +658,6 @@ def run_pipeline_task(
     def _progress(label: str) -> None:
         self.update_state(state="PROGRESS", meta={"label": label})
 
-    success = False
     try:
         try:
             _progress(f"Running {stage} pipeline...")
@@ -770,7 +672,6 @@ def run_pipeline_task(
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
                 _progress("Computing resistance maps...")
                 layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
-                _store_resistance_cache(roost, features, params, work_dir)
 
                 raw_tifs = {}
                 for layer in layers:
@@ -802,11 +703,9 @@ def run_pipeline_task(
                     _write_total_resistance_raster(work_dir, total_resistance, roost)
                 asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
                 if not os.path.exists(asc_path):
-                    _progress("Checking for cached resistance results...")
-                    if not _try_reuse_resistance_cache(roost, features, params, work_dir):
-                        _progress("Computing resistance maps...")
-                        logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
-                        _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
+                    _progress("Computing resistance maps...")
+                    logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
+                    _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
                 _progress("Running Circuitscape current map...")
                 layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
             else:
@@ -816,7 +715,6 @@ def run_pipeline_task(
             logger.info("Job %s: completed in %.1fs, %d layers, %d warnings",
                         self.request.id, elapsed, len(layers), len(warnings))
             emit_pipeline_complete(stage, elapsed, True)
-            success = True
             result = {"layers": layers, "warnings": warnings}
             if stage == "resistance":
                 result["raw_tifs"] = raw_tifs
@@ -835,7 +733,7 @@ def run_pipeline_task(
             logger.error("Job %s failed: %s", self.request.id, friendly)
             raise RuntimeError(friendly) from e
     finally:
-        _cleanup_token_job(self.request.id, success)
+        _cleanup_token_job(self.request.id)
 
 
 @shared_task(name="tasks.cleanup_work_dirs")

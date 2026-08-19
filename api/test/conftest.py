@@ -3,9 +3,6 @@
 Eager mode executes the task body inline in the calling process during
 ``apply_async`` / ``delay``. This is exactly the behaviour we want for unit
 tests — no live broker or worker container required.
-
-The dedup client in ``routers.pipeline`` points at a fakeredis-backed Redis
-so tests can exercise dedup logic without a real Redis container.
 """
 
 from __future__ import annotations
@@ -45,14 +42,3 @@ def _eager_celery():
         task_always_eager=prev.task_always_eager,
         task_eager_propagates=prev.task_eager_propagates,
     )
-
-
-@pytest.fixture()
-def fake_redis(monkeypatch):
-    """Patch routers.pipeline._dedup_client to return a fakeredis instance."""
-    import fakeredis
-    server = fakeredis.FakeServer()
-    client = fakeredis.FakeStrictRedis(server=server, decode_responses=True)
-    import routers.pipeline as p
-    monkeypatch.setattr(p, "_redis", client)
-    return client

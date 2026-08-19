@@ -77,13 +77,13 @@ services:
     networks:
       - internal
     environment:
-      POSTGRES_DB: umami
-      POSTGRES_USER: umami
-      POSTGRES_PASSWORD: umami
+      POSTGRES_DB: ${UMAMI_DB_NAME:?UMAMI_DB_NAME must be set}
+      POSTGRES_USER: ${UMAMI_DB_USER:?UMAMI_DB_USER must be set}
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD:?UMAMI_DB_PASSWORD must be set}
     volumes:
       - umamipgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U umami -d umami"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${UMAMI_DB_USER:?UMAMI_DB_USER must be set} -d ${UMAMI_DB_NAME:?UMAMI_DB_NAME must be set}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -106,7 +106,7 @@ services:
     networks:
       - internal
     # --maxmemory must stay below the 256MB container limit. volatile-lru only
-    # evicts keys that have a TTL (auth tokens, dedup keys, Celery results);
+    # evicts keys that have a TTL (auth tokens, job records, Celery results);
     # broker queue entries have no TTL and are never evicted.
     command: redis-server --port ${REDIS_PORT:?REDIS_PORT must be set} --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --maxmemory 200mb --maxmemory-policy volatile-lru
     volumes:
@@ -202,7 +202,7 @@ services:
       postgres-umami:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://umami:umami@postgres-umami:5432/umami
+      DATABASE_URL: postgresql://${UMAMI_DB_USER:?UMAMI_DB_USER must be set}:${UMAMI_DB_PASSWORD:?UMAMI_DB_PASSWORD must be set}@postgres-umami:5432/${UMAMI_DB_NAME:?UMAMI_DB_NAME must be set}
       APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
       DISABLE_TELEMETRY: "1"
       PORT: ${UMAMI_PORT:?UMAMI_PORT must be set}

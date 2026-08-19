@@ -17,16 +17,6 @@ class UnifiedFeaturesRegression(unittest.TestCase):
         self.assertIn("features", fields)
         self.assertNotIn("lamps", fields, "lamps field should not exist in PipelineRequest")
 
-    def test_payload_hash_no_lamps(self):
-        """_payload_hash should not accept a lamps parameter."""
-        from tasks import _payload_hash
-        import inspect
-        sig = inspect.signature(_payload_hash)
-        params = list(sig.parameters.keys())
-        self.assertIn("stage", params)
-        self.assertIn("features", params)
-        self.assertNotIn("lamps", params, "lamps parameter should not exist in _payload_hash")
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,23 +26,14 @@ if not CELERY_RESULT_BACKEND:
 RATE_LIMIT_TOKENS_PER_MINUTE = int(os.environ.get("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
 ANALYTICS_RATE_LIMIT_PER_MINUTE = int(os.environ.get("ANALYTICS_RATE_LIMIT_PER_MINUTE", "30"))
 
-# Lifetime of the dedup fingerprint AND the task_to_hash / job:owner /
-# job:viewers lookups. These must share one value: the dedup fingerprint has
-# to live at least as long as results are servable, otherwise an identical
-# resubmission recycles the hash-named work dir while earlier tasks still
-# reference it (see routers/pipeline.py).
+# How long a job's owner record (and therefore its results) stays accessible.
+# Must match the window during which results are servable (24h default).
 JOB_CACHE_TTL_SECONDS = int(os.environ.get("JOB_CACHE_TTL_SECONDS", "86400"))
 
 # Derived, not independently tunable: how long a token is locked to one
 # in-flight job. Twice the hard pipeline timeout so the lock always outlives
 # the task it guards.
 JOB_TOKEN_TTL_SECONDS = PIPELINE_TIMEOUT * 2
-
-# How long cached resistance results (ASC files) survive in Redis so a
-# subsequent Current run can reuse them without repeating the Resistance
-# stage. Must be at least PIPELINE_TIMEOUT so the cache outlives any
-# in-flight run that depends on it.
-RES_CACHE_TTL_SECONDS = int(os.environ.get("RES_CACHE_TTL_SECONDS", str(JOB_CACHE_TTL_SECONDS)))
 
 # Global cap on in-flight pipeline jobs (running + queued). New submissions
 # get HTTP 429 once this many jobs are in flight. Size it around
