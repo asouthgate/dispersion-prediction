@@ -23,9 +23,10 @@ from schemas.pipeline import (
     JobLogsResponse,
     ResultLayerInfo,
 )
+from services.access import check_job_access
 from services.analytics import daily_token_hash, emit_pipeline_submit
 from services.redis import get_redis
-from tasks import run_pipeline_task, _payload_hash, _create_work_dir
+from tasks import run_pipeline_task, _create_work_dir
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,11 @@ _STATE_MAP = {
     "FAILURE": "failed",
     "REVOKED": "cancelled",
 }
+
+
+def _valid_dim(value) -> bool:
+    """A raster dimension must be a positive integer within the pixel cap."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 < value <= MAX_PIXEL_DIMENSION
 
 
 @router.post("/coverage", response_model=PipelineStartResponse)
@@ -62,15 +68,6 @@ async def start_current(req: PipelineRequest, token: str = Depends(require_auth)
     logger.info("POST /api/pipeline/current (roost=%s, features=%d)",
                 "set" if req.roost else "none", len(req.features))
     return await _start_pipeline("current", req, token)
-
-
-async def _add_viewer(redis, job_id: str, token: str) -> None:
-    """Grant a non-owner token read access to a deduplicated job's status."""
-    try:
-        await redis.sadd(f"job:viewers:{job_id}", token)
-        await redis.expire(f"job:viewers:{job_id}", JOB_CACHE_TTL_SECONDS)
-    except Exception as e:
-        logger.warning("Failed to add viewer for job %s: %s", job_id, e)
 
 
 async def _check_token_job_free(redis, token: str) -> None:
@@ -124,36 +121,15 @@ async def _check_inflight_capacity(redis) -> None:
         logger.error("In-flight check failed (allowing request): %s", e)
 
 
-async def _register_job(redis, task_id: str, payload_hash: str, token: str) -> None:
+async def _register_job(redis, task_id: str, token: str) -> None:
     """Write all Redis bookkeeping for a newly dispatched job."""
     try:
-        await redis.set(f"task_to_hash:{task_id}", payload_hash, ex=JOB_CACHE_TTL_SECONDS)
         await redis.set(f"job:owner:{task_id}", token, ex=JOB_CACHE_TTL_SECONDS)
         await redis.set(f"job:by_token:{token}", task_id, ex=JOB_TOKEN_TTL_SECONDS)
         await redis.set(f"job:token:{task_id}", token, ex=JOB_TOKEN_TTL_SECONDS)
         await redis.sadd("jobs:inflight", task_id)
     except Exception as e:
         logger.error("Failed to write job keys to Redis: %s", e)
-
-
-async def _check_job_access(redis, job_id: str, token: str) -> None:
-    """Read access to a job: the owner, or a viewer added via a dedup hit.
-
-    Jobs with no owner record (e.g. expired keys) are left accessible so
-    legacy/alienated jobs remain inspectable.
-    """
-    try:
-        owner = await redis.get(f"job:owner:{job_id}")
-    except Exception:
-        owner = None
-    if owner is None or owner == token:
-        return
-    try:
-        is_viewer = await redis.sismember(f"job:viewers:{job_id}", token)
-    except Exception:
-        is_viewer = False
-    if not is_viewer:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view your own jobs")
 
 
 async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> PipelineStartResponse:
@@ -172,41 +148,25 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
             detail=f"Resolution too high for the selected area. Use a resolution of at least {min_res} m/px or reduce the study area.",
         )
 
+    if total_resistance:
+        extent = total_resistance.get("extent") or {}
+        m = extent.get("m")
+        n = extent.get("n")
+        if not _valid_dim(m) or not _valid_dim(n):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Total resistance raster dimensions must be between 1 and {MAX_PIXEL_DIMENSION} pixels.",
+            )
+
     redis = get_redis()
     await _check_token_job_free(redis, token)
     await _check_inflight_capacity(redis)
 
-    payload_hash = _payload_hash(stage, roost, features, params)
-    work_dir = _create_work_dir(payload_hash)
-
-    dedup_key = f"dedup:{payload_hash}"
-    try:
-        existing = await redis.get(dedup_key)
-    except Exception:
-        existing = None
-    if existing:
-        logger.info("Reusing in-flight job %s (hash=%s) for new %s request",
-                    existing, payload_hash, stage)
-        await _add_viewer(redis, existing, token)
-        return PipelineStartResponse(job_id=existing)
-
     task_id = uuid.uuid4().hex
-    logger.info("Job %s: work dir %s (hash=%s)", task_id, work_dir, payload_hash)
+    work_dir = _create_work_dir(task_id)
+    logger.info("Job %s: work dir %s", task_id, work_dir)
 
-    try:
-        won = await redis.set(dedup_key, task_id, ex=JOB_CACHE_TTL_SECONDS, nx=True)
-    except Exception as e:
-        logger.error("Failed to write dedup key to Redis: %s", e)
-        won = True  # Redis unavailable: proceed without dedup.
-    if not won:
-        # Lost the race: a concurrent request already dispatched this payload.
-        existing = await redis.get(dedup_key)
-        if existing:
-            logger.info("Concurrent duplicate: returning winner %s (hash=%s)", existing, payload_hash)
-            await _add_viewer(redis, existing, token)
-            return PipelineStartResponse(job_id=existing)
-
-    await _register_job(redis, task_id, payload_hash, token)
+    await _register_job(redis, task_id, token)
 
     run_pipeline_task.apply_async(
         args=(stage, work_dir, roost, features, params, total_resistance),
@@ -226,7 +186,7 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
 
 @router.get("/{job_id}", response_model=JobStatus)
 async def get_job_status(job_id: str, token: str = Depends(require_auth)):
-    await _check_job_access(get_redis(), job_id, token)
+    await check_job_access(get_redis(), job_id, token)
 
     result = AsyncResult(job_id, app=celery_app)
     state = result.state
@@ -282,7 +242,7 @@ async def get_job_status(job_id: str, token: str = Depends(require_auth)):
 
 @router.get("/{job_id}/logs", response_model=JobLogsResponse)
 async def get_job_logs(job_id: str, offset: int = 0, token: str = Depends(require_auth)):
-    await _check_job_access(get_redis(), job_id, token)
+    await check_job_access(get_redis(), job_id, token)
 
     redis = get_redis()
     log_key = f"pipeline:logs:{job_id}"
@@ -325,11 +285,6 @@ async def cancel_job(job_id: str, token: str = Depends(require_auth)):
 
     celery_app.control.revoke(job_id, terminate=True, signal="SIGTERM")
 
-    reverse_key = f"task_to_hash:{job_id}"
-    payload_hash = await redis.get(reverse_key)
-    if payload_hash:
-        await redis.delete(f"dedup:{payload_hash}")
-        await redis.delete(reverse_key)
     try:
         await redis.delete(f"job:by_token:{token}")
         await redis.delete(f"job:token:{job_id}")
@@ -338,5 +293,5 @@ async def cancel_job(job_id: str, token: str = Depends(require_auth)):
         pass
     await redis.delete(f"job:owner:{job_id}")
 
-    logger.info("Job %s cancelled and dedup cleared", job_id)
+    logger.info("Job %s cancelled", job_id)
     return {"job_id": job_id, "status": "cancelled"}
