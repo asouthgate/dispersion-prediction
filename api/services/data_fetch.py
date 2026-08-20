@@ -265,7 +265,7 @@ def _resample_to_grid(src_path, ref_transform, ref_width, ref_height, dst_crs="E
 def fetch_resistance_inputs(work_dir: str):
     cfg = _get_db_config()
     if cfg is None:
-        logger.warning("No ~/.bats.cfg found — skipping DB fetch")
+        logger.warning("No ~/.bats.cfg found. Skipping DB fetch")
         return
 
     inputs_path = os.path.join(work_dir, "inputs.json")
