@@ -136,41 +136,44 @@ def _bootstrap_admin(admin_user: str, admin_pass: str) -> bool:
     return True
 
 
-def _ensure_website_id(token: str, create: bool) -> None:
-    """Resolve the Umami website id, caching it.
+def _get_website_id(token: str) -> str | None:
+    """Look up the Umami website id by name, returning None if not found."""
+    websites = _admin_request("GET", "/api/websites", token=token)
+    if not websites or not websites.get("data"):
+        return None
+    for site in websites["data"]:
+        if site.get("name") == _APP_HOSTNAME:
+            return site.get("id")
+    return None
 
-    Looks up the website by name. If it doesn't exist and ``create`` is True
-    (API), create it. Workers pass ``create=False`` and poll until the API has
-    created it.
-    """
+def _ensure_website_id(token: str) -> None:
+    """Get the website ID or create one if it doesnt exist"""
     global _website_id
 
     backoff = 2.0
     while True:
-        websites = _admin_request("GET", "/api/websites", token=token)
-        if websites and websites.get("data"):
-            for site in websites["data"]:
-                if site.get("name") == _APP_HOSTNAME:
-                    _website_id = site.get("id", "")
-                    logger.info("Found existing Umami website: %s", _website_id)
-                    return
+        existing_id = _get_website_id(token)
+        if existing_id:
+            _website_id = existing_id
+            logger.info("Resolved Umami website id: %s (%s)", _website_id, _APP_HOSTNAME)
+            return
 
-        if create:
-            created = _admin_request(
-                "POST", "/api/websites", token=token,
-                body={"name": _APP_HOSTNAME, "domain": "localhost"},
-            )
-            if created and created.get("id"):
-                _website_id = created["id"]
-                logger.info("Created Umami website: %s (%s)", _website_id, _APP_HOSTNAME)
-                return
-            logger.warning("Failed to create Umami website; will retry")
+        # Create the website if it doesn't exist.
+        created = _admin_request(
+            "POST", "/api/websites", token=token,
+            body={"name": _APP_HOSTNAME, "domain": "localhost"},
+        )
+        if created and created.get("id"):
+            _website_id = created["id"]
+            logger.info("Created Umami website: %s (%s)", _website_id, _APP_HOSTNAME)
+            return
+        logger.warning("Failed to create Umami website; will retry")
 
         _time.sleep(backoff)
         backoff = min(backoff * 2, 60.0)
 
 
-def _bootstrap_loop(create: bool) -> None:
+def _bootstrap_loop() -> None:
     """Wait for Umami, ensure the admin credentials work, then resolve the id.
 
     Retries forever (with backoff) until the configured admin credentials are
@@ -189,10 +192,10 @@ def _bootstrap_loop(create: bool) -> None:
         backoff = min(backoff * 2, 60.0)
 
     if not _website_id:
-        _ensure_website_id(token, create)
+        _ensure_website_id(token)
 
 
-def _start_analytics_init(create: bool) -> None:
+def _start_analytics_init() -> None:
     """Spawn the background analytics init thread (idempotent per process)."""
     global _bootstrap_started
     if _bootstrap_started or not _UMAMI_URL:
@@ -201,7 +204,7 @@ def _start_analytics_init(create: bool) -> None:
         if _bootstrap_started:
             return
         _bootstrap_started = True
-    threading.Thread(target=_bootstrap_loop, args=(create,), daemon=True, name="analytics-init").start()
+    threading.Thread(target=_bootstrap_loop, daemon=True, name="analytics-init").start()
 
 
 def init_analytics() -> None:
@@ -210,16 +213,15 @@ def init_analytics() -> None:
     Spawns a background daemon thread and returns immediately. Idempotent per
     process, and a no-op when analytics is not configured (UMAMI_URL unset).
     """
-    _start_analytics_init(create=True)
+    _start_analytics_init()
 
 
 def get_analytics_id() -> None:
-    """Worker startup: resolve the website id without ever creating it.
-
-    Logs in and polls by name until the API has created the website, then
-    caches the id. Spawns a background daemon thread and returns immediately.
-    """
-    _start_analytics_init(create=False)
+    token = _admin_login(_UMAMI_ADMIN_USER, _UMAMI_ADMIN_PASSWORD)
+    if not token:
+        logger.warning("Umami admin login failed; analytics will be disabled")
+        return
+    return _get_website_id(token)
 
 
 def _post_umami(payload_bytes: bytes) -> None:
