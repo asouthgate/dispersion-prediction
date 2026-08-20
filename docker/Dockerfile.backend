@@ -3,21 +3,14 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake \
     curl \
     gcc \
     g++ \
     gettext-base \
-    gfortran \
-    libabsl-dev \
     libgdal-dev \
     libgeos-dev \
     libproj-dev \
     libpq-dev \
-    libudunits2-dev \
-    libssl-dev \
-    libcurl4-openssl-dev \
-    libxml2-dev \
     libuv1 \
     make \
     postgresql-client \

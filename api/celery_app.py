@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_process_init
 
 from config import PIPELINE_TIMEOUT, CELERY_BROKER_URL, CELERY_RESULT_BACKEND
+
+from services.analytics import get_analytics_id
 
 celery_app = Celery(
     "dispersion",
@@ -13,6 +16,11 @@ celery_app = Celery(
     backend=CELERY_RESULT_BACKEND,
     include=["tasks"],
 )
+
+
+@worker_process_init.connect
+def _on_worker_process_init(**kwargs):
+    get_analytics_id()
 
 celery_app.conf.update(
     task_track_started=True,

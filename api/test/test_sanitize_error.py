@@ -10,10 +10,6 @@ from tasks import _sanitize_error
 
 class SanitizeErrorTests(unittest.TestCase):
 
-    def test_r_script_not_found(self):
-        result = _sanitize_error("R script not found: scripts/foo.R")
-        self.assertIn("pipeline script is not available", result)
-
     def test_timeout(self):
         result = _sanitize_error("Process timed out after 600 seconds")
         self.assertIn("took too long", result)

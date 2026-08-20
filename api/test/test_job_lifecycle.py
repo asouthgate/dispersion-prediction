@@ -32,7 +32,7 @@ class JobLifecycleTests(unittest.TestCase):
         mock_layers = [{"id": "total_res", "name": "Total Resistance", "tif_path": "/tmp/t.tif"}]
         mock_warnings = ["coverage sparse"]
 
-        with patch("tasks._run_r_pipeline", return_value=(mock_layers, mock_warnings)):
+        with patch("tasks._run_resistance_pipeline", return_value=(mock_layers, mock_warnings)):
             result = run_pipeline_task.apply(
                 args=("resistance", "/tmp/circuitscape-test/test-job",
                       self._make_args()[2], [], {"resolution": 10}),
