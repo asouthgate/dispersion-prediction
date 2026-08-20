@@ -18,6 +18,10 @@ _UMAMI_URL = os.environ.get("UMAMI_URL", "").rstrip("/")
 _APP_HOSTNAME = os.environ.get("ANALYTICS_HOSTNAME", "bat-dispersion-app")
 _USER_AGENT = "DispersionAppBackend/1.0 (Analytics Client)"
 
+# Umami hardcodes its first-run admin account; there is no env var to change it.
+_SEED_ADMIN_USER = "admin"
+_SEED_ADMIN_PASSWORD = os.environ.get("UMAMI_SEED_ADMIN_PASSWORD", "umami")
+
 _website_id = os.environ.get("UMAMI_WEBSITE_ID", "")
 _lock = threading.Lock()
 _init_done = bool(_website_id)
@@ -43,7 +47,7 @@ def is_ready() -> bool:
 
 
 def ensure_umami_website() -> None:
-    # Lazily kick off background website discovery. Non-blocking: returns
+    # Background website discovery. Non-blocking: returns
     # immediately; init continues in a daemon thread if not already started.
     _maybe_start_init()
 
@@ -60,8 +64,7 @@ def _admin_request(method: str, path: str, token: str | None = None, body: dict 
     headers = {"Content-Type": "application/json", "User-Agent": _USER_AGENT}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    # urllib does not use connection pooling; low-volume analytics traffic makes
-    # this acceptable. Could migrate to httpx if request frequency increases.
+    # TODO: urllib does not use connection pooling, should be okay for now.
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -72,6 +75,44 @@ def _admin_request(method: str, path: str, token: str | None = None, body: dict 
     except json.JSONDecodeError as e:
         logger.warning("Umami admin request %s %s returned invalid JSON: %s", method, path, e)
         return None
+
+
+# TODO: not sure this is the responsibility of this API. Easiest place for now. 
+def _bootstrap_admin(admin_user: str, admin_pass: str) -> bool:
+    """Reset the Umami admin password from the first-run seed (admin/umami).
+
+    This is a workaround since the container does not allow an override. Still,
+    it is arguably not the responsibility of this API.
+
+    Idempotent: does nothing the second time. Returns True if the password was reset.
+    """
+    if admin_user == _SEED_ADMIN_USER and admin_pass == _SEED_ADMIN_PASSWORD:
+        return False  # nothing to change
+
+    login = _admin_request(
+        "POST", "/api/auth/login",
+        body={"username": _SEED_ADMIN_USER, "password": _SEED_ADMIN_PASSWORD},
+    )
+    if not login or not login.get("token"):
+        return False  # not seeded yet, or already configured
+
+    user = login.get("user") or {}
+    user_id = user.get("id")
+    if not user_id:
+        logger.warning("Umami seed login returned no user id; cannot bootstrap admin password")
+        return False
+
+    updated = _admin_request(
+        "POST", f"/api/users/{user_id}",
+        token=login["token"],
+        body={"password": admin_pass},
+    )
+    if updated is None:
+        logger.error("Failed to update Umami admin password from seed account")
+        return False
+
+    logger.info("Umami admin password updated from seed default (user=%s)", admin_user)
+    return True
 
 
 def _ensure_website() -> None:
@@ -104,6 +145,8 @@ def _ensure_website() -> None:
             )
             if login and login.get("token"):
                 break
+            if _bootstrap_admin(admin_user, admin_pass): # change login pass if required
+                continue
             logger.debug("Waiting for Umami (attempt %d/30)...", attempt + 1)
             # _time.sleep blocks the calling thread; safe because _ensure_website
             # runs in a daemon background thread, never in a request handler.
