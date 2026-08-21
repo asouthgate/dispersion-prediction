@@ -22,10 +22,18 @@ _USER_AGENT = "DispersionAppBackend/1.0 (Analytics Client)"
 _SEED_ADMIN_USER = "admin"
 _SEED_ADMIN_PASSWORD = os.environ.get("UMAMI_SEED_ADMIN_PASSWORD", "umami")
 
-_website_id = os.environ.get("UMAMI_WEBSITE_ID", "")
-_lock = threading.Lock()
-_init_done = bool(_website_id)
-_init_started = False
+_UMAMI_ADMIN_USER = os.environ.get("UMAMI_ADMIN_USER", "admin")
+_UMAMI_ADMIN_PASSWORD = os.environ.get("UMAMI_ADMIN_PASSWORD", "")
+
+if _UMAMI_URL and not _UMAMI_ADMIN_PASSWORD:
+    raise RuntimeError("UMAMI_ADMIN_PASSWORD must be set when UMAMI_URL is configured")
+
+# Website id: optional config override; otherwise ensured/created by
+# init_analytics() and cached here.
+_website_id = os.environ.get("UMAMI_WEBSITE_ID", "").strip()
+
+_bootstrap_started = False
+_bootstrap_lock = threading.Lock()
 
 _max_workers = int(os.environ.get("ANALYTICS_MAX_WORKERS", "4"))
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=_max_workers, thread_name_prefix="analytics")
@@ -42,21 +50,14 @@ def daily_token_hash(token: str) -> str:
 
 
 def is_ready() -> bool:
-    _maybe_start_init()
     return bool(_UMAMI_URL and _website_id)
-
-
-def ensure_umami_website() -> None:
-    # Background website discovery. Non-blocking: returns
-    # immediately; init continues in a daemon thread if not already started.
-    _maybe_start_init()
 
 
 def _send_url() -> str:
     return f"{_UMAMI_URL}/api/send"
 
 
-def _admin_request(method: str, path: str, token: str | None = None, body: dict | None = None) -> dict | None:
+def _admin_request(method: str, path: str, token: str | None = None, body: dict | None = None, quiet: bool = False) -> dict | None:
     if not _UMAMI_URL:
         return None
     url = f"{_UMAMI_URL}{path}"
@@ -64,27 +65,46 @@ def _admin_request(method: str, path: str, token: str | None = None, body: dict 
     headers = {"Content-Type": "application/json", "User-Agent": _USER_AGENT}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    # TODO: urllib does not use connection pooling, should be okay for now.
+    # urllib does not use connection pooling; low-volume analytics traffic makes
+    # this acceptable. Could migrate to httpx if request frequency increases.
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        # An HTTP status error (e.g. 401 during bootstrap) is an expected,
+        # recoverable condition, not a transport failure.
+        logger.debug("Umami admin request %s %s returned HTTP %d", method, path, e.code)
+        return None
     except urllib.error.URLError as e:
-        logger.warning("Umami admin request %s %s failed (network): %s", method, path, e)
+        if quiet:
+            logger.debug("Umami admin request %s %s failed (network): %s", method, path, e)
+        else:
+            logger.warning("Umami admin request %s %s failed (network): %s", method, path, e)
         return None
     except json.JSONDecodeError as e:
         logger.warning("Umami admin request %s %s returned invalid JSON: %s", method, path, e)
         return None
 
 
-# TODO: not sure this is the responsibility of this API. Easiest place for now. 
+def _admin_login(username: str, password: str) -> str | None:
+    login = _admin_request(
+        "POST", "/api/auth/login",
+        body={"username": username, "password": password},
+        quiet=True,
+    )
+    return login.get("token") if login else None
+
+
 def _bootstrap_admin(admin_user: str, admin_pass: str) -> bool:
     """Reset the Umami admin password from the first-run seed (admin/umami).
 
-    This is a workaround since the container does not allow an override. Still,
-    it is arguably not the responsibility of this API.
+    Umami seeds a default admin on first boot and exposes no env override, so on
+    a fresh database the configured credentials won't match. Log in with the
+    seed account and update the admin password to the configured value.
 
-    Idempotent: does nothing the second time. Returns True if the password was reset.
+    Idempotent: once the password has been changed the seed login fails, so this
+    becomes a no-op on subsequent boots. Returns True if the password was reset.
     """
     if admin_user == _SEED_ADMIN_USER and admin_pass == _SEED_ADMIN_PASSWORD:
         return False  # nothing to change
@@ -92,6 +112,7 @@ def _bootstrap_admin(admin_user: str, admin_pass: str) -> bool:
     login = _admin_request(
         "POST", "/api/auth/login",
         body={"username": _SEED_ADMIN_USER, "password": _SEED_ADMIN_PASSWORD},
+        quiet=True,
     )
     if not login or not login.get("token"):
         return False  # not seeded yet, or already configured
@@ -115,68 +136,92 @@ def _bootstrap_admin(admin_user: str, admin_pass: str) -> bool:
     return True
 
 
-def _ensure_website() -> None:
-    global _website_id, _init_done
+def _get_website_id(token: str) -> str | None:
+    """Look up the Umami website id by name, returning None if not found."""
+    websites = _admin_request("GET", "/api/websites", token=token)
+    if not websites or not websites.get("data"):
+        return None
+    for site in websites["data"]:
+        if site.get("name") == _APP_HOSTNAME:
+            return site.get("id")
+    return None
 
-    if _init_done:
-        return
+def _ensure_website_id(token: str) -> None:
+    """Get the website ID or create one if it doesnt exist"""
+    global _website_id
 
-    with _lock:
-        if _init_done:
+    backoff = 2.0
+    while True:
+        existing_id = _get_website_id(token)
+        if existing_id:
+            _website_id = existing_id
+            logger.info("Resolved Umami website id: %s (%s)", _website_id, _APP_HOSTNAME)
             return
 
-        if _website_id:
-            _init_done = True
+        # Create the website if it doesn't exist.
+        created = _admin_request(
+            "POST", "/api/websites", token=token,
+            body={"name": _APP_HOSTNAME, "domain": "localhost"},
+        )
+        if created and created.get("id"):
+            _website_id = created["id"]
+            logger.info("Created Umami website: %s (%s)", _website_id, _APP_HOSTNAME)
             return
+        logger.warning("Failed to create Umami website; will retry")
 
+        _time.sleep(backoff)
+        backoff = min(backoff * 2, 60.0)
+
+
+def _bootstrap_loop() -> None:
+    """Wait for Umami, ensure the admin credentials work, then resolve the id.
+
+    Retries forever (with backoff) until the configured admin credentials are
+    accepted, so a slow first-boot Umami doesn't disable analytics.
+    """
+    backoff = 2.0
+    while True:
         if not _UMAMI_URL:
-            logger.debug("UMAMI_URL not set, analytics disabled")
-            _init_done = True
             return
+        token = _admin_login(_UMAMI_ADMIN_USER, _UMAMI_ADMIN_PASSWORD)
+        if token:
+            break
+        if _bootstrap_admin(_UMAMI_ADMIN_USER, _UMAMI_ADMIN_PASSWORD):
+            continue
+        _time.sleep(backoff)
+        backoff = min(backoff * 2, 60.0)
 
-        admin_user = os.environ["UMAMI_ADMIN_USER"]
-        admin_pass = os.environ["UMAMI_ADMIN_PASSWORD"]
+    if not _website_id:
+        _ensure_website_id(token)
 
-        login = None
-        for attempt in range(30):
-            login = _admin_request(
-                "POST", "/api/auth/login",
-                body={"username": admin_user, "password": admin_pass},
-            )
-            if login and login.get("token"):
-                break
-            if _bootstrap_admin(admin_user, admin_pass): # change login pass if required
-                continue
-            logger.debug("Waiting for Umami (attempt %d/30)...", attempt + 1)
-            # _time.sleep blocks the calling thread; safe because _ensure_website
-            # runs in a daemon background thread, never in a request handler.
-            _time.sleep(2)
-        else:
-            logger.warning("Umami did not become ready within 60s. Analytics disabled.")
-            _init_done = True
+
+def _start_analytics_init() -> None:
+    """Spawn the background analytics init thread (idempotent per process)."""
+    global _bootstrap_started
+    if _bootstrap_started or not _UMAMI_URL:
+        return
+    with _bootstrap_lock:
+        if _bootstrap_started:
             return
+        _bootstrap_started = True
+    threading.Thread(target=_bootstrap_loop, daemon=True, name="analytics-init").start()
 
-        token = login["token"]
 
-        websites = _admin_request("GET", "/api/websites", token=token)
-        if websites and websites.get("data"):
-            _website_id = websites["data"][0]["id"]
-            logger.info("Found existing Umami website: %s", _website_id)
-        else:
-            name = os.environ.get("ANALYTICS_HOSTNAME", "bat-dispersion-app")
-            created = _admin_request(
-                "POST", "/api/websites", token=token,
-                body={"name": name, "domain": "localhost"},
-            )
-            if created and created.get("id"):
-                _website_id = created["id"]
-                logger.info("Created Umami website: %s (%s)", _website_id, name)
-            else:
-                logger.warning("Failed to create Umami website. Analytics disabled.")
-                _init_done = True
-                return
+def init_analytics() -> None:
+    """API startup: bootstrap the admin password and create the website if missing.
 
-        _init_done = True
+    Spawns a background daemon thread and returns immediately. Idempotent per
+    process, and a no-op when analytics is not configured (UMAMI_URL unset).
+    """
+    _start_analytics_init()
+
+
+def get_analytics_id() -> None:
+    token = _admin_login(_UMAMI_ADMIN_USER, _UMAMI_ADMIN_PASSWORD)
+    if not token:
+        logger.warning("Umami admin login failed; analytics will be disabled")
+        return
+    return _get_website_id(token)
 
 
 def _post_umami(payload_bytes: bytes) -> None:
@@ -195,24 +240,8 @@ def _post_umami(payload_bytes: bytes) -> None:
         logger.warning("Umami event send failed (network)", exc_info=True)
 
 
-def _maybe_start_init() -> None:
-    # Lazy, non-blocking initialization: starts _ensure_website in a daemon
-    # thread exactly once on the first emit/is_ready call. Never blocks the
-    # caller. Works in both FastAPI and Celery contexts without import-time
-    # side effects.
-    global _init_started
-    if _init_done or _init_started:
-        return
-    with _lock:
-        if _init_done or _init_started:
-            return
-        _init_started = True
-    threading.Thread(target=_ensure_website, daemon=True, name="analytics-init").start()
-
-
 def _fire(payload: dict) -> None:
-    _maybe_start_init()
-    if not _init_done or not _website_id or not _UMAMI_URL:
+    if not _UMAMI_URL or not _website_id:
         return
     data = json.dumps(payload, default=str).encode("utf-8")
     if not _send_slots.acquire(blocking=False):

@@ -1,11 +1,10 @@
-"""R bridge: calls existing R pipeline scripts via subprocess."""
+"""Pipeline I/O helpers: coordinate transforms, input-file writing, and result collection."""
 
 import copy
 import fiona
 import json
-import os
-import subprocess
 import logging
+import os
 from typing import Any
 
 from pyproj import Transformer
@@ -88,8 +87,7 @@ def _geojson_to_geopackage(geojson: dict[str, Any], path: str, layer: str,
             dst.write({"geometry": feat["geometry"], "properties": write_props})
 
 
-
-def _write_input_files(
+def write_input_files(
     work_dir: str,
     roost: dict[str, Any] | None,
     features: list[dict[str, Any]],
@@ -171,54 +169,6 @@ def _write_input_files(
         json.dump(input_data, f, indent=2)
 
 
-def run_pipeline(
-    stage: str,
-    roost: dict[str, Any] | None,
-    features: list[dict[str, Any]],
-    params: dict[str, int | float],
-    work_dir: str,
-) -> subprocess.CompletedProcess:
-    """Launch the appropriate R pipeline script as a subprocess.
-
-    Returns the Popen handle for monitoring.
-    """
-    _write_input_files(work_dir, roost, features, params)
-
-    r_script_map = {
-        "coverage": "scripts/run-coverage-pipeline.R",
-        "resistance": "scripts/run-resistance-pipeline-json.R",
-        "current": "scripts/run-circuitscape.R",
-    }
-
-    rscript = r_script_map.get(stage)
-    if not rscript:
-        raise ValueError(f"Unknown stage: {stage}")
-
-    rscript_path = os.path.join(work_dir, "..", "..", rscript)
-
-    env = os.environ.copy()
-    env["R_PIPELINE_WORKDIR"] = work_dir
-    env["R_PIPELINE_INPUT"] = os.path.join(work_dir, "inputs.json")
-
-    result = subprocess.run(
-        ["Rscript", rscript_path, os.path.join(work_dir, "inputs.json")],
-        cwd=work_dir,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    if result.stdout:
-        logger.info(f"R Pipeline Output:\n{result.stdout}")
-    if result.stderr:
-        logger.error(f"R Pipeline Error Output:\n{result.stderr}")
-
-    if result.returncode != 0:
-        raise RuntimeError(f"R script failed with exit code {result.returncode}")
-
-    return result
-
 def collect_results(work_dir: str) -> list[dict[str, Any]]:
     """Collect result rasters from the working directory.
 
@@ -226,7 +176,6 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
     """
     layers = []
 
-    # Expected raster outputs from the R pipeline
     expected_layers = [
         ("log_total_res", "Log Total Resistance"),
         ("total_res", "Total Resistance"),
@@ -265,6 +214,7 @@ def collect_results(work_dir: str) -> list[dict[str, Any]]:
         logger.info("All coverage layers present: %s", coverage_found)
 
     return layers
+
 
 def collect_raster_info(work_dir: str) -> dict | None:
     """Read raster extent metadata from the first GeoTIFF in the work dir."""

@@ -265,7 +265,7 @@ def _resample_to_grid(src_path, ref_transform, ref_width, ref_height, dst_crs="E
 def fetch_resistance_inputs(work_dir: str):
     cfg = _get_db_config()
     if cfg is None:
-        logger.warning("No ~/.bats.cfg found — skipping DB fetch")
+        logger.warning("No ~/.bats.cfg found. Skipping DB fetch")
         return
 
     inputs_path = os.path.join(work_dir, "inputs.json")
@@ -384,6 +384,66 @@ def fetch_resistance_inputs(work_dir: str):
         conn.close()
 
     logger.info("Data fetch complete for %s", work_dir)
+
+
+def fetch_coverage_inputs(work_dir: str):
+    """Fetch DTM/DSM rasters from PostGIS for the coverage stage."""
+    cfg = _get_db_config()
+    if cfg is None:
+        logger.warning("No ~/.bats.cfg found — skipping DB fetch")
+        return
+
+    inputs_path = os.path.join(work_dir, "inputs.json")
+    with open(inputs_path) as f:
+        inputs = json.load(f)
+
+    roost = inputs["roost"]
+    params = inputs.get("params", {})
+
+    easting = roost["easting"]
+    northing = roost["northing"]
+    radius = roost["radius"]
+    resolution = params.get("resolution", 10)
+
+    xmin = easting - radius
+    xmax = easting + radius
+    ymin = northing - radius
+    ymax = northing + radius
+
+    ncols = int((xmax - xmin) / resolution)
+    nrows = int((ymax - ymin) / resolution)
+
+    logger.info(
+        "Coverage fetch: extent=[%.2f,%.2f,%.2f,%.2f] %dx%d, roost=[%.2f,%.2f], radius=%.0f",
+        xmin, ymin, xmax, ymax, ncols, nrows, easting, northing, radius,
+    )
+
+    conn = _connect(cfg)
+    try:
+        for name in ["dtm", "dsm"]:
+            table = cfg.get(f"{name}_table", name)
+            logger.info("Fetching %s raster from %s...", name, table)
+            tiff_bytes = _fetch_raster_as_tiff(
+                conn, table, xmin, ymin, xmax, ymax, ncols, nrows
+            )
+            out_path = os.path.join(work_dir, f"{name}.tif")
+            if tiff_bytes is None:
+                logger.warning("%s returned no data, writing zeros", name)
+                arr = np.zeros((nrows, ncols), dtype=np.float32)
+                transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
+                with rasterio.open(
+                    out_path, "w", driver="GTiff", height=nrows, width=ncols,
+                    count=1, dtype=np.float32, crs="EPSG:27700",
+                    transform=transform, nodata=-9999.0,
+                ) as dst:
+                    dst.write(arr, 1)
+            else:
+                with open(out_path, "wb") as f:
+                    f.write(tiff_bytes)
+    finally:
+        conn.close()
+
+    logger.info("Coverage data fetch complete for %s", work_dir)
 
 
 def fetch_landscape_inputs(work_dir: str):

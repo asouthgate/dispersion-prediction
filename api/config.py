@@ -50,8 +50,7 @@ def _load_bats_cfg() -> dict[str, str]:
     this module so the config is read once per process and cached in memory.
 
     ~/.bats.cfg is the single source of truth for database configuration
-    (connection details and table names).  Both the Python API and the R
-    pipeline read from this file."""
+    (connection details and table names).  The Python API reads from this file."""
     cfg_path = os.path.expanduser("~/.bats.cfg")
     if not os.path.isfile(cfg_path):
         raise RuntimeError(

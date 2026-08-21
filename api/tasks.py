@@ -28,13 +28,12 @@ import numpy as np
 
 from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL
 from services.analytics import emit_pipeline_complete
-from services.r_bridge import _write_input_files as wif, collect_results, collect_raster_info, wgs84_to_bng
+from services.circuitscape import julia_command, asc_to_geotiff
+from services.pipeline_io import write_input_files as wif, collect_results, collect_raster_info, wgs84_to_bng
 from services.raster_service import get_bounds_for_tif, tif_to_png
-from services.data_fetch import fetch_landscape_inputs
+from services.data_fetch import fetch_coverage_inputs, fetch_landscape_inputs
 
 logger = logging.getLogger(__name__)
-
-REPO_ROOT = os.environ.get("REPO_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
 # We don't rely on these, they are only here as super safety check
@@ -95,31 +94,6 @@ def _create_work_dir(job_id: str) -> str:
     return work_dir
 
 
-def _write_input_files(
-    work_dir: str,
-    roost: dict[str, Any] | None,
-    features: list[dict[str, Any]],
-    params: dict[str, int | float],
-) -> None:
-
-    roost_bng = None
-    if roost:
-        easting, northing = wgs84_to_bng(roost["lng"], roost["lat"])
-        roost_bng = {
-            "easting": easting,
-            "northing": northing,
-            "radius": roost.get("radiusMeters", roost.get("radius_meters", 2500)),
-        }
-
-    input_data = {
-        "roost": roost_bng,
-        "params": params,
-        "feature_count": len(features),
-    }
-    with open(os.path.join(work_dir, "inputs.json"), "w") as f:
-        json.dump(input_data, f, indent=2)
-
-
 def _run_coverage(
     task,
     work_dir: str,
@@ -127,18 +101,11 @@ def _run_coverage(
     features: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Run coverage pipeline via R script and convert TIFs to PNGs."""
+    """Fetch DTM/DSM from the database and convert them to PNGs."""
     t0 = time.monotonic()
 
-    _run_r_pipeline(task, work_dir, "coverage", roost, features, params)
-
-    layers_raw = collect_results(work_dir)
-    coverage_keys = {"dtm", "dsm"}
-    coverage_found = {l["id"] for l in layers_raw if l["id"] in coverage_keys}
-    logger.info("Coverage layers found: %s (expected: %s)", coverage_found, coverage_keys)
-    layers_raw = [l for l in layers_raw if l["id"] in coverage_keys]
-
-    colormaps = {"dtm": "terrain", "dsm": "terrain"}
+    wif(work_dir, roost, features, params)
+    fetch_coverage_inputs(work_dir)
 
     easting, northing = wgs84_to_bng(roost["lng"], roost["lat"])
     radius = roost.get("radiusMeters", roost.get("radius_meters", 2500))
@@ -146,13 +113,13 @@ def _run_coverage(
     bounds_wgs84 = _bng_to_wgs84(extent_bng)
 
     layers = []
-    for layer in layers_raw:
-        tif_path = layer["tif_path"]
-        layer_id = layer["id"]
-        name = layer["name"]
+    for layer_id, name in (("dtm", "Digital Terrain Model"), ("dsm", "Digital Surface Model")):
+        tif_path = os.path.join(work_dir, f"{layer_id}.tif")
+        if not os.path.exists(tif_path):
+            logger.warning("Coverage layer %s missing", layer_id)
+            continue
         png_path = os.path.join(work_dir, "images", f"{layer_id}.png")
-        tif_to_png(tif_path, png_path, bounds_wgs84, colormap=colormaps.get(layer_id, "magma"),
-                   circular_mask=False)
+        tif_to_png(tif_path, png_path, bounds_wgs84, colormap="terrain", circular_mask=False)
         layers.append({
             "id": layer_id,
             "name": name,
@@ -202,6 +169,41 @@ def _render_coverage_png(dtm_tif: str, png_path: str) -> None:
     Image.fromarray(rgba, "RGBA").save(png_path, "PNG")
 
 
+def _run_current(
+    task,
+    work_dir: str,
+    roost: dict[str, Any],
+    features: list[dict[str, Any]],
+    params: dict[str, int | float],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run Circuitscape (via Julia) and build the current result layers."""
+    t0 = time.monotonic()
+
+    cmd = julia_command(work_dir)
+    stdout, stderr, returncode = _run_subprocess(task, cmd, work_dir, os.environ.copy())
+
+    if returncode != 0:
+        is_cancelled = getattr(task.request, "is_cancelled", None)
+        if callable(is_cancelled) and is_cancelled():
+            logger.info("Circuitscape was cancelled (rc=%d)", returncode)
+            return [], []
+        stderr_tail = (stderr or "")[-500:] or "(no output)"
+        logger.error("Circuitscape failed (rc=%d): %s", returncode, stderr_tail)
+        raise RuntimeError(f"Circuitscape failed (rc={returncode})")
+
+    curmap_path = os.path.join(work_dir, "circuitscape", "cs_out_curmap.asc")
+    if not os.path.exists(curmap_path):
+        raise RuntimeError("Circuitscape produced no current map output")
+
+    asc_to_geotiff(curmap_path, os.path.join(work_dir, "current.tif"), log_transform=False)
+    asc_to_geotiff(curmap_path, os.path.join(work_dir, "log_current.tif"), log_transform=True)
+
+    result_layers = _build_result_layers(work_dir, task.request.id)
+    elapsed = time.monotonic() - t0
+    logger.info("Current pipeline completed in %.1fs, %d layers", elapsed, len(result_layers))
+    return result_layers, []
+
+
 def _bng_to_wgs84(extent_bng: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
     """Convert BNG extent to WGS84 bounds [west, south, east, north]."""
     transformer = Transformer.from_crs("EPSG:27700", "EPSG:4326", always_xy=True)
@@ -215,8 +217,6 @@ def _sanitize_error(message: str) -> str:
     """Replace raw error messages with user-safe ones."""
     lower = message.lower()
 
-    if "r script not found" in lower:
-        return "The pipeline script is not available on this server."
     if "timed out" in lower or "timeout" in lower:
         return "The pipeline took too long to complete. Try a smaller area or higher resolution value."
     if "no result layers" in lower or "produced no output" in lower or "produced no result layers" in lower:
@@ -326,43 +326,25 @@ def _build_pipeline_cmd(
     features: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> tuple[bool, list[str], str, dict[str, str]]:
-    """Resolve the subprocess command for a pipeline stage.
+    """Resolve the subprocess command for the resistance (Rust binary) stage.
 
     Returns (use_binary, cmd, cwd, env).
     """
     wif(work_dir, roost, features, params)
 
-    r_script_map = {
-        "coverage": "scripts/run-coverage-pipeline.R",
-        "current": "scripts/run-circuitscape.R",
-    }
-    binary_map = {
-        "resistance": "resistance-pipeline",
-    }
+    if stage != "resistance":
+        raise ValueError(f"Unknown stage: {stage}")
 
-    use_binary = stage in binary_map
-    if use_binary:
-        binary_path = _shutil.which(binary_map[stage])
-        if not binary_path:
-            raise RuntimeError(f"Binary not found: {binary_map[stage]}")
-        logger.info("Fetching DB data for landscape resistance...")
-        fetch_landscape_inputs(work_dir)
-        cmd = [binary_path, work_dir, "--stage", "landscape"]
-        cwd = work_dir
-        env = os.environ.copy()
-    else:
-        rscript = r_script_map.get(stage)
-        if not rscript:
-            raise ValueError(f"Unknown stage: {stage}")
-        script_path = os.path.join(REPO_ROOT, rscript)
-        if not os.path.exists(script_path):
-            raise FileNotFoundError(f"R script not found: {rscript}")
-        cmd = ["Rscript", "--no-init-file", script_path, os.path.join(work_dir, "inputs.json")]
-        cwd = REPO_ROOT
-        env = os.environ.copy()
-        env["R_PIPELINE_WORKDIR"] = work_dir
+    binary_path = _shutil.which("resistance-pipeline")
+    if not binary_path:
+        raise RuntimeError("Binary not found: resistance-pipeline")
+    logger.info("Fetching DB data for landscape resistance...")
+    fetch_landscape_inputs(work_dir)
+    cmd = [binary_path, work_dir, "--stage", "landscape"]
+    cwd = work_dir
+    env = os.environ.copy()
 
-    return use_binary, cmd, cwd, env
+    return True, cmd, cwd, env
 
 
 def _run_subprocess(
@@ -445,14 +427,9 @@ def _run_subprocess(
 
         return "".join(stdout_lines), "".join(stderr_lines), proc.returncode
     except FileNotFoundError:
-        if cmd[0] == "resistance-pipeline":
-            raise RuntimeError(
-                "Pipeline binary not found: resistance-pipeline. "
-                "Resistance pipeline requires the Rust binary."
-            )
         raise RuntimeError(
-            "R environment not configured. Resistance and Current pipelines require R. "
-            "Only Coverage is available in this deployment."
+            "Pipeline binary not found: resistance-pipeline. "
+            "The resistance pipeline requires the Rust binary."
         )
     except subprocess.TimeoutExpired:
         _terminate_group(proc)
@@ -502,7 +479,7 @@ def _build_result_layers(work_dir: str, task_id: str) -> list[dict[str, Any]]:
     return result_layers
 
 
-def _run_r_pipeline(
+def _run_resistance_pipeline(
     task,
     work_dir: str,
     stage: str,
@@ -510,7 +487,7 @@ def _run_r_pipeline(
     features: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Run a pipeline stage via subprocess and build result layers."""
+    """Run the resistance (Rust binary) stage and build result layers."""
     t0 = time.monotonic()
 
     use_binary, cmd, cwd, env = _build_pipeline_cmd(stage, work_dir, roost, features, params)
@@ -537,7 +514,7 @@ def _run_r_pipeline(
     result_layers = _build_result_layers(work_dir, task.request.id)
 
     elapsed = time.monotonic() - t0
-    logger.info("R pipeline completed in %.1fs, %d layers, %d warnings", elapsed, len(result_layers), len(warnings))
+    logger.info("Resistance pipeline completed in %.1fs, %d layers, %d warnings", elapsed, len(result_layers), len(warnings))
     return result_layers, warnings
 
 
@@ -671,7 +648,7 @@ def run_pipeline_task(
                 if not roost:
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
                 _progress("Computing resistance maps...")
-                layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
+                layers, warnings = _run_resistance_pipeline(self, work_dir, stage, roost, features, params)
 
                 raw_tifs = {}
                 for layer in layers:
@@ -705,9 +682,9 @@ def run_pipeline_task(
                 if not os.path.exists(asc_path):
                     _progress("Computing resistance maps...")
                     logger.info("Job %s: ASC files missing, running resistance pipeline first", self.request.id)
-                    _run_r_pipeline(self, work_dir, "resistance", roost, features, params)
+                    _run_resistance_pipeline(self, work_dir, "resistance", roost, features, params)
                 _progress("Running Circuitscape current map...")
-                layers, warnings = _run_r_pipeline(self, work_dir, stage, roost, features, params)
+                layers, warnings = _run_current(self, work_dir, roost, features, params)
             else:
                 raise ValueError(f"Unknown pipeline stage: {stage}")
 
