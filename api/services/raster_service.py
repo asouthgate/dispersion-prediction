@@ -1,10 +1,3 @@
-"""Raster helpers.
-
-Rendering (colormaps, colorbars, circular masks) now happens client-side in the
-shared frontend plotter, so this module only exposes the georeferencing helper
-needed to describe rasters in API responses.
-"""
-
 import logging
 from typing import Optional
 
