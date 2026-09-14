@@ -155,6 +155,12 @@ describe('extractLampCoords', () => {
     expect(result![2]).toBe(5);
     expect(result![5]).toBe(7);
   });
+
+  it('skips lamps that fall outside the raster extent (no (0,0) artifact)', () => {
+    // WGS84 far from the BNG extent -> out of bounds, must be dropped rather than clamped to (0,0).
+    const result = extractLampCoords([pointFeature(10, 10, 5)], EXTENT);
+    expect(result).toBeNull();
+  });
 });
 
 describe('applyMask', () => {

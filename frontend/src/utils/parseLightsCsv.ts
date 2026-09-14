@@ -3,6 +3,7 @@ import { bngToWgs84LngLat } from './projections';
 export interface ParsedLights {
   geojson: GeoJSON.FeatureCollection;
   count: number;
+  warnings: string[];
 }
 
 const LAT_ALIASES = new Set(['lat', 'latitude']);
@@ -10,6 +11,9 @@ const LNG_ALIASES = new Set(['lng', 'lon', 'long', 'longitude']);
 const EASTING_ALIASES = new Set(['easting']);
 const NORTHING_ALIASES = new Set(['northing']);
 const HEIGHT_ALIASES = new Set(['height', 'z']);
+
+/** Heights above this (metres) are treated as likely-misplaced coordinates. */
+const MAX_REALISTIC_HEIGHT_M = 100;
 
 function normalizeHeader(value: string): string {
   return value.trim().toLowerCase();
@@ -63,8 +67,8 @@ function parseCsv(text: string): string[][] {
  *
  * Coordinates must be provided as a lat/lng pair (`lat`/`latitude` +
  * `lng`/`lon`/`long`/`longitude`) or an easting/northing pair (`easting` +
- * `northing`, British National Grid). An optional `height` (or `z`) column
- * supplies per-lamp heights. Headers are matched case-insensitively.
+ * `northing`, British National Grid). A `height` (or `z`) column supplies
+ * per-lamp heights. Headers are matched case-insensitively.
  */
 export function parseLightsCsv(text: string): ParsedLights {
   const rows = parseCsv(text);
@@ -94,8 +98,14 @@ export function parseLightsCsv(text: string): ParsedLights {
     );
   }
 
+  if (heightIdx === null) {
+    throw new Error('CSV must include a height column (height or z).');
+  }
+
   const coordinates: [number, number][] = [];
   const heights: number[] = [];
+  let badWgs84 = 0;
+  let badBng = 0;
 
   for (let r = 1; r < rows.length; r++) {
     const cells = rows[r]!;
@@ -106,7 +116,7 @@ export function parseLightsCsv(text: string): ParsedLights {
       return Number.parseFloat(cells[idx] ?? '');
     };
 
-    const height = heightIdx !== null ? parseNum(heightIdx) : 0;
+    const height = parseNum(heightIdx);
     const h = Number.isFinite(height) ? height : 0;
 
     let lng: number;
@@ -115,9 +125,15 @@ export function parseLightsCsv(text: string): ParsedLights {
     if (isWgs84) {
       lat = parseNum(latIdx!);
       lng = parseNum(lngIdx!);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && (Math.abs(lat) > 90 || Math.abs(lng) > 180)) {
+        badWgs84++;
+      }
     } else {
       const easting = parseNum(eastingIdx!);
       const northing = parseNum(northingIdx!);
+      if (Number.isFinite(easting) && Number.isFinite(northing) && (easting < 0 || easting > 700000 || northing < 0 || northing > 1300000)) {
+        badBng++;
+      }
       if (!Number.isFinite(easting) || !Number.isFinite(northing)) continue;
       [lng, lat] = bngToWgs84LngLat(easting, northing);
     }
@@ -132,6 +148,26 @@ export function parseLightsCsv(text: string): ParsedLights {
     throw new Error('CSV contains no valid lamp coordinates.');
   }
 
+  const warnings: string[] = [];
+  if (badWgs84 > 0) {
+    warnings.push(
+      `${badWgs84} of ${coordinates.length} lamp(s) have latitude/longitude values outside the valid range (-90..90, -180..180). ` +
+        'The coordinates may be British National Grid (easting/northing) — use easting/northing column names instead.',
+    );
+  }
+  if (badBng > 0) {
+    warnings.push(
+      `${badBng} of ${coordinates.length} lamp(s) have easting/northing values outside the British National Grid range.`,
+    );
+  }
+  const badHeights = heights.filter((h) => h > MAX_REALISTIC_HEIGHT_M);
+  if (badHeights.length > 0) {
+    warnings.push(
+      `${badHeights.length} of ${heights.length} lamp(s) have an unrealistic height above ${MAX_REALISTIC_HEIGHT_M} m. ` +
+        'Check that the height column contains lamp heights and not coordinates.',
+    );
+  }
+
   return {
     geojson: {
       type: 'FeatureCollection',
@@ -144,5 +180,6 @@ export function parseLightsCsv(text: string): ParsedLights {
       ],
     },
     count: coordinates.length,
+    warnings,
   };
 }

@@ -34,13 +34,24 @@ describe('parseLightsCsv', () => {
     expect(count).toBe(1);
   });
 
-  it('defaults missing height to 0', () => {
-    const csv = 'lat,lng\n50.604,-3.59';
-    const { geojson } = parseLightsCsv(csv);
-    expect(geojson.features[0]!.properties!.heights).toEqual([0]);
+  it('throws when the height column is missing', () => {
+    expect(() => parseLightsCsv('lat,lng\n50.604,-3.59')).toThrow(/height column/i);
+  });
+
+  it('warns when lamp heights are unrealistic', () => {
+    const csv = 'lat,lng,height\n50.604,-3.59,10\n50.605,-3.591,397157';
+    const { warnings } = parseLightsCsv(csv);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/unrealistic height/i);
+  });
+
+  it('warns when lat/lng are out of range (e.g. BNG values in lat/lng columns)', () => {
+    const csv = 'lat,lng,height\n397157,87896,7';
+    const { warnings } = parseLightsCsv(csv);
+    expect(warnings.some((w) => /outside the valid range/i.test(w))).toBe(true);
   });
 
   it('throws when no valid coordinates are present', () => {
-    expect(() => parseLightsCsv('lat,lng\nfoo,bar')).toThrow(/no valid lamp coordinates/i);
+    expect(() => parseLightsCsv('lat,lng,height\nfoo,bar,10')).toThrow(/no valid lamp coordinates/i);
   });
 });

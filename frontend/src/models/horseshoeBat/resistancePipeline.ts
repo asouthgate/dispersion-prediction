@@ -99,6 +99,13 @@ function featuresToGeojsonCollection(features: DataFeature[], layer: string): st
 
 export function extractLampCoords(features: DataFeature[], extent: Extent): Float32Array | null {
   const coords: number[] = [];
+  const pushLamp = (easting: number, northing: number, h: number): void => {
+    const [col, row] = bngToPixel(easting, northing, extent);
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return;
+    if (col < 0 || col >= extent.n || row < 0 || row >= extent.m) return;
+    coords.push(col, row, h);
+  };
+
   for (const f of features) {
     const gj = f.geojson as unknown as {
       type: string;
@@ -111,16 +118,14 @@ export function extractLampCoords(features: DataFeature[], extent: Extent): Floa
     if (geom.type === 'Point') {
       const [lng, lat] = geom.coordinates as [number, number];
       const [easting, northing] = wgs84ToBng(lat, lng);
-      const [col, row] = bngToPixel(easting, northing, extent);
-      coords.push(col, row, height);
+      pushLamp(easting, northing, height);
     } else if (geom.type === 'MultiPoint') {
       const pts = geom.coordinates as [number, number][];
       const heights = f.data?.heights as number[] | undefined;
       for (let i = 0; i < pts.length; i++) {
         const [lng, lat] = pts[i]!;
         const [easting, northing] = wgs84ToBng(lat, lng);
-        const [col, row] = bngToPixel(easting, northing, extent);
-        coords.push(col, row, heights?.[i] ?? height);
+        pushLamp(easting, northing, heights?.[i] ?? height);
       }
     } else if (geom.type === 'LineString') {
       const spacing = (f.data?.spacing as number) ?? 50;
@@ -134,8 +139,7 @@ export function extractLampCoords(features: DataFeature[], extent: Extent): Floa
         const nPoints = Math.max(1, Math.floor(segLen / spacing));
         for (let p = 1; p <= nPoints; p++) {
           const t = p / nPoints;
-          const [col, row] = bngToPixel(e1 + t * dx, n1 + t * dy, extent);
-          coords.push(col, row, height);
+          pushLamp(e1 + t * dx, n1 + t * dy, height);
         }
       }
     }

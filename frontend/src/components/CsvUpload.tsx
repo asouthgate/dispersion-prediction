@@ -38,9 +38,12 @@ export function FileUpload() {
     reader.onload = () => {
       const text = reader.result as string;
       let data: object;
+      let warnings: string[] = [];
       if (isCsvFile(file.name, text)) {
         try {
-          data = parseLightsCsv(text).geojson;
+          const parsed = parseLightsCsv(text);
+          data = parsed.geojson;
+          warnings = parsed.warnings;
         } catch (err) {
           setWarning(err instanceof Error ? err.message : 'Failed to parse CSV file.');
           return;
@@ -60,6 +63,7 @@ export function FileUpload() {
         setWarning('No valid features found in file. Provide a GeoJSON FeatureCollection or a CSV with lat/lng or easting/northing columns.');
         return;
       }
+      setWarning(warnings.join(' '));
       setLoaded(total);
     };
     reader.readAsText(file);
@@ -67,7 +71,7 @@ export function FileUpload() {
 
   return (
     <div className="csv-upload">
-      <p className="hint">Import a GeoJSON file with Point features (WGS84), or a CSV with lat/lng or easting/northing columns and an optional height column.</p>
+      <p className="hint">Import a GeoJSON file with Point features (WGS84), or a CSV with lat/lng or easting/northing columns plus a height column (height or z).</p>
       <input type="file" accept=".geojson,.json,.csv" onChange={handleFile} />
       {loaded > 0 && (
         <p className="hint">Loaded {loaded} lamps</p>
