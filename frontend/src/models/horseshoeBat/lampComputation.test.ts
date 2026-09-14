@@ -132,6 +132,35 @@ describe('extractLampCoords', () => {
     expect(result).not.toBeNull();
     expect(result!.length).toBe(6);
   });
+
+  it('extracts all points from a MultiPoint collection with per-point heights', () => {
+    const [lng1, lat1] = bngToWgs84LngLat(300500, 60500);
+    const [lng2, lat2] = bngToWgs84LngLat(300600, 60600);
+    const feature = {
+      id: 'collection-1',
+      category: 'Lights',
+      label: '',
+      geometryKind: 'multipoint',
+      visible: true,
+      geojson: {
+        type: 'Feature',
+        geometry: { type: 'MultiPoint', coordinates: [[lng1, lat1], [lng2, lat2]] },
+        properties: {},
+      },
+      data: { heights: [5, 7] },
+    } as unknown as DataFeature;
+    const result = extractLampCoords([feature], EXTENT);
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(6);
+    expect(result![2]).toBe(5);
+    expect(result![5]).toBe(7);
+  });
+
+  it('skips lamps that fall outside the raster extent (no (0,0) artifact)', () => {
+    // WGS84 far from the BNG extent -> out of bounds, must be dropped rather than clamped to (0,0).
+    const result = extractLampCoords([pointFeature(10, 10, 5)], EXTENT);
+    expect(result).toBeNull();
+  });
 });
 
 describe('applyMask', () => {
