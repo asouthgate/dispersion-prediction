@@ -4,7 +4,7 @@ import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDi
 import type { RunLogEntry, DataFeature } from '@gsbio/engine';
 import { RunPanel, ResultsPanel } from '@gsbio/engine';
 import { RunLogModal } from './RunLogModal';
-import { fetchBytes } from '../utils/fetchBytes';
+import { fetchBytes } from '../auth';
 
 const MAX_PIXEL_DIMENSION = 2000;
 
