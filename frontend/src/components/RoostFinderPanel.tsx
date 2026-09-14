@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useModel, useResults, useEngine, useRawSources, RunPanel, ResultsPanel, ParamField, extractResultLayers, downloadLayerZip } from '@gsbio/engine';
 import { ROOST_INPUTS_SOURCE_ID, type RoostFinderInputs } from '../models/roostFinder';
 import { RunLogModal } from './RunLogModal';
-import { fetchBytes } from '../utils/fetchBytes';
+import { fetchBytes } from '../auth';
 
 const ROOST_FINDER_PAPER_URL = 'https://doi.org/10.1098/rsos.231999';
 
