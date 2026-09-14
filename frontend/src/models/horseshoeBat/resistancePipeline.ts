@@ -113,6 +113,15 @@ export function extractLampCoords(features: DataFeature[], extent: Extent): Floa
       const [easting, northing] = wgs84ToBng(lat, lng);
       const [col, row] = bngToPixel(easting, northing, extent);
       coords.push(col, row, height);
+    } else if (geom.type === 'MultiPoint') {
+      const pts = geom.coordinates as [number, number][];
+      const heights = f.data?.heights as number[] | undefined;
+      for (let i = 0; i < pts.length; i++) {
+        const [lng, lat] = pts[i]!;
+        const [easting, northing] = wgs84ToBng(lat, lng);
+        const [col, row] = bngToPixel(easting, northing, extent);
+        coords.push(col, row, heights?.[i] ?? height);
+      }
     } else if (geom.type === 'LineString') {
       const spacing = (f.data?.spacing as number) ?? 50;
       const ring = geom.coordinates as [number, number][];

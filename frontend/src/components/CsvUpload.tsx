@@ -1,12 +1,27 @@
 import { useState } from 'react';
 import { useEngine, type FileSourceDef } from '@gsbio/engine';
 import { AgreementModal } from './AgreementModal';
+import { parseLightsCsv } from '../utils/parseLightsCsv';
 
 const LIGHTS_SOURCE: FileSourceDef = {
   id: 'uploaded-lights',
   name: 'Street Lights',
   category: 'Lights',
 };
+
+function isCsvFile(name: string, text: string): boolean {
+  return /\.csv$/i.test(name) || !text.trimStart().startsWith('{');
+}
+
+function countPoints(features: { geometryKind: string; geojson: GeoJSON.Feature }[]): number {
+  return features.reduce((n, f) => {
+    if (f.geometryKind === 'multipoint') {
+      const g = f.geojson.geometry as GeoJSON.MultiPoint;
+      return n + (Array.isArray(g?.coordinates) ? g.coordinates.length : 0);
+    }
+    return n + 1;
+  }, 0);
+}
 
 export function FileUpload() {
   const engine = useEngine();
@@ -21,27 +36,39 @@ export function FileUpload() {
 
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result as string);
-        const features = engine.addFileSourceFeatures(LIGHTS_SOURCE, data);
-
-        if (features.length === 0) {
-          setWarning('No valid features found in file. Must be a GeoJSON FeatureCollection.');
+      const text = reader.result as string;
+      let data: object;
+      if (isCsvFile(file.name, text)) {
+        try {
+          data = parseLightsCsv(text).geojson;
+        } catch (err) {
+          setWarning(err instanceof Error ? err.message : 'Failed to parse CSV file.');
           return;
         }
-
-        setLoaded(features.length);
-      } catch {
-        setWarning('Invalid JSON file.');
+      } else {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          setWarning('Invalid GeoJSON file.');
+          return;
+        }
       }
+
+      const features = engine.addFileSourceFeatures(LIGHTS_SOURCE, data);
+      const total = countPoints(features);
+      if (total === 0) {
+        setWarning('No valid features found in file. Provide a GeoJSON FeatureCollection or a CSV with lat/lng or easting/northing columns.');
+        return;
+      }
+      setLoaded(total);
     };
     reader.readAsText(file);
   };
 
   return (
     <div className="csv-upload">
-      <p className="hint">Import a GeoJSON file with Point features (coordinates in WGS84).</p>
-      <input type="file" accept=".geojson,.json" onChange={handleFile} />
+      <p className="hint">Import a GeoJSON file with Point features (WGS84), or a CSV with lat/lng or easting/northing columns and an optional height column.</p>
+      <input type="file" accept=".geojson,.json,.csv" onChange={handleFile} />
       {loaded > 0 && (
         <p className="hint">Loaded {loaded} lamps</p>
       )}

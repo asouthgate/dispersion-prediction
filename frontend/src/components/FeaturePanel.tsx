@@ -57,14 +57,18 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
 
   const height = feature.data?.height as number | undefined;
   const spacing = feature.data?.spacing as number | undefined;
+  const pointCount = feature.geometryKind === 'multipoint'
+    ? ((feature.geojson.geometry as GeoJSON.MultiPoint).coordinates?.length ?? 0)
+    : null;
 
   const updateData = (key: string, val: number) => {
     updateFeature(feature.id, { data: { ...(feature.data ?? {}), [key]: val } });
   };
 
-  const showHeight = feature.category === 'Building' || feature.category === 'Lights' || feature.category === 'LightSequence';
-  const showSpacing = feature.category === 'LightSequence';
-  const showResistanceValue = feature.category === 'GenericResistance';
+  const isCollection = feature.geometryKind === 'multipoint';
+  const showHeight = !isCollection && (feature.category === 'Building' || feature.category === 'Lights' || feature.category === 'LightSequence');
+  const showSpacing = !isCollection && feature.category === 'LightSequence';
+  const showResistanceValue = !isCollection && feature.category === 'GenericResistance';
 
   return (
     <div
@@ -90,6 +94,11 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
         </button>
       </div>
 
+      {isCollection && (
+        <div className="feature-card-extra">
+          <span className="field-label">{pointCount} lamp points</span>
+        </div>
+      )}
       {showHeight && (
         <div className="feature-card-extra">
           <label className="field">
