@@ -152,7 +152,7 @@ export function parseLightsCsv(text: string): ParsedLights {
   if (badWgs84 > 0) {
     warnings.push(
       `${badWgs84} of ${coordinates.length} lamp(s) have latitude/longitude values outside the valid range (-90..90, -180..180). ` +
-        'The coordinates may be British National Grid (easting/northing) — use easting/northing column names instead.',
+        'The coordinates may be British National Grid (easting/northing): use easting/northing column names instead.',
     );
   }
   if (badBng > 0) {
