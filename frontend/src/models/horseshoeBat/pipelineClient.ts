@@ -11,7 +11,13 @@ export interface JobStatus {
   progress_label: string;
   error: string | null;
   warnings: string[];
-  layers?: { id: string; name: string; url: string; bounds: [number, number, number, number] }[];
+  layers?: {
+    id: string;
+    name: string;
+    url: string;
+    bounds: [number, number, number, number];
+    display?: Record<string, unknown>;
+  }[];
   raw_tifs?: Record<string, string>;
   raw_geojson?: Record<string, string>;
   raster_extent?: {

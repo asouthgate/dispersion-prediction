@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useModel, useResults, useEngine, useRawSources, RunPanel, ResultsPanel, ParamField } from '@gsbio/engine';
+import { useModel, useResults, useEngine, useRawSources, RunPanel, ResultsPanel, ParamField, extractResultLayers, downloadLayerZip } from '@gsbio/engine';
 import { ROOST_INPUTS_SOURCE_ID, type RoostFinderInputs } from '../models/roostFinder';
 import { RunLogModal } from './RunLogModal';
+import { fetchBytes } from '../utils/fetchBytes';
 
 const ROOST_FINDER_PAPER_URL = 'https://doi.org/10.1098/rsos.231999';
 
@@ -126,18 +127,29 @@ export function RoostFinderParams() {
 
 export function RoostFinderRun() {
   const { summaries } = useResults();
+  const engine = useEngine();
   const inputs = useRoostInputs();
   const [logRunId, setLogRunId] = useState<string | null>(null);
   const logRun = logRunId ? summaries.find((s) => s.runId === logRunId) ?? null : null;
 
   const handleViewLog = (runId: string) => setLogRunId(runId);
 
+  const handleDownload = async (runId: string) => {
+    const rec = engine.findRun(runId);
+    if (!rec?.result) return;
+    try {
+      await downloadLayerZip('roost_results.zip', extractResultLayers(rec.result), fetchBytes);
+    } catch (err) {
+      console.error('Download failed:', err);
+    }
+  };
+
   return (
     <div className="generate-actions">
       {!inputs && <p className="hint">Import detector and call data CSVs first.</p>}
       <RunPanel />
       <hr className="generate-divider" />
-      <ResultsPanel onViewLog={handleViewLog} />
+      <ResultsPanel onViewLog={handleViewLog} onDownload={handleDownload} />
       <RunLogModal run={logRun} onClose={() => setLogRunId(null)} />
     </div>
   );

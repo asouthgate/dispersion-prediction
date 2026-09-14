@@ -118,7 +118,7 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         with rasterio.open(
             buf, "w", driver="GTiff", height=nrows, width=ncols,
             count=1, dtype=np.float32, crs="EPSG:27700",
-            transform=transform, nodata=-9999.0,
+            transform=transform, nodata=-9999.0, compress="deflate",
         ) as dst:
             dst.write(arr, 1)
         return buf.getvalue()
@@ -251,6 +251,7 @@ def _resample_to_grid(src_path, ref_transform, ref_width, ref_height, dst_crs="E
             crs=dst_crs,
             transform=ref_transform,
             nodata=-9999.0,
+            compress="deflate",
         ) as dst:
             dst.write(dst_data, 1)
 
@@ -317,7 +318,7 @@ def fetch_resistance_inputs(work_dir: str):
                 with rasterio.open(
                     out_path, "w", driver="GTiff", height=nrows, width=ncols,
                     count=1, dtype=np.float32, crs="EPSG:27700",
-                    transform=ref_transform, nodata=-9999.0,
+                    transform=ref_transform, nodata=-9999.0, compress="deflate",
                 ) as dst:
                     dst.write(arr, 1)
                 logger.info(
@@ -504,7 +505,7 @@ def fetch_landscape_inputs(work_dir: str):
                 with rasterio.open(
                     out_path, "w", driver="GTiff", height=nrows, width=ncols,
                     count=1, dtype=np.float32, crs="EPSG:27700",
-                    transform=ref_transform, nodata=-9999.0,
+                    transform=ref_transform, nodata=-9999.0, compress="deflate",
                 ) as dst:
                     dst.write(arr, 1)
                 logger.info(

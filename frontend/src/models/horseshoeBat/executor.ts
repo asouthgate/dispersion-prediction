@@ -3,11 +3,14 @@ import type {
   DataFeature,
   ResultLayerEntry,
   SimulationEngine,
+  RasterPlotSpec,
 } from '@gsbio/engine';
+import { plotRaster } from '@gsbio/engine';
 import type { PipelineStage } from './model';
 import { horseshoeBatModel } from './model';
 import { createPipelineAdapter } from './pipelineClient';
 import { runRemoteJob } from '@gsbio/engine/remote';
+import { fetchRaster } from '../../wasm/geotiffFetch';
 import { ingestResistanceData, computeResistancePipeline, buildResistanceResultLayers, encodeTotalResistance, type StoredTotalRes } from './resistancePipeline';
 import type { ResistanceParams } from '../../wasm/resistanceCompute';
 
@@ -135,13 +138,39 @@ export function createHorseshoeBatExecutor(): Executor {
 
       const jobResult = job.result;
 
-      let layers: ResultLayerEntry[] = (jobResult.layers ?? [])
-        .filter(l => !BROWSER_LAYER_IDS.has(l.id))
-        .map((l) => ({
-          id: l.id,
-          name: l.name,
-          envelope: { kind: 'image' as const, url: l.url, bounds: l.bounds },
-        }));
+      const serverLayers = (jobResult.layers ?? []).filter(l => !BROWSER_LAYER_IDS.has(l.id));
+      if (serverLayers.length > 0) {
+        ctx.onLog?.('info', `Plotting ${serverLayers.length} raster layer(s) in your browser…`);
+      }
+      let layers: ResultLayerEntry[] = await Promise.all(
+        serverLayers.map(async (l): Promise<ResultLayerEntry> => {
+          const d = l.display ?? {};
+          const raster = await fetchRaster(l.url);
+          const nodata = typeof d.nodata === 'number' ? (d.nodata as number) : undefined;
+          const spec: RasterPlotSpec = {
+            palette: (d.palette as RasterPlotSpec['palette']) ?? 'magma',
+            scale: d.scale as RasterPlotSpec['scale'],
+            preTransformed: d.preTransformed as boolean | undefined,
+            transform: d.transform as RasterPlotSpec['transform'],
+            vmin: d.vmin as number | undefined,
+            vmax: d.vmax as number | undefined,
+            invert: d.invert as boolean | undefined,
+            circularMask: d.circularMask as boolean | undefined,
+            label: (d.label as string) ?? l.name,
+            colorbar: { side: 'right' },
+          };
+          const out = await plotRaster(
+            { data: raster.data, width: raster.n, height: raster.m, boundsWgs84: l.bounds, nodata },
+            spec,
+          );
+          return {
+            id: l.id,
+            name: l.name,
+            envelope: { kind: 'image', url: out.url, bounds: out.boundsWgs84 },
+            raw: { filename: `${l.id}.tif`, url: l.url },
+          };
+        }),
+      );
 
       if (stage === 'resistance' && jobResult.raw_tifs && jobResult.raster_extent) {
         ctx.onLog?.('info', 'Computing resistance layers in browser via WebAssembly...');

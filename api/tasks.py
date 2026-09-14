@@ -17,7 +17,6 @@ from typing import Any
 import redis as _sync_redis
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
-from PIL import Image
 from pyproj import Transformer
 
 import base64
@@ -30,7 +29,7 @@ from config import PIPELINE_TIMEOUT, AUTH_REDIS_URL
 from services.analytics import emit_pipeline_complete
 from services.circuitscape import julia_command, asc_to_geotiff
 from services.pipeline_io import write_input_files as wif, collect_results, collect_raster_info, wgs84_to_bng
-from services.raster_service import get_bounds_for_tif, tif_to_png
+from services.raster_service import get_bounds_for_tif
 from services.data_fetch import fetch_coverage_inputs, fetch_landscape_inputs
 
 logger = logging.getLogger(__name__)
@@ -101,7 +100,7 @@ def _run_coverage(
     features: list[dict[str, Any]],
     params: dict[str, int | float],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Fetch DTM/DSM from the database and convert them to PNGs."""
+    """Fetch DTM/DSM from the database and describe them as plot-ready layers."""
     t0 = time.monotonic()
 
     wif(work_dir, roost, features, params)
@@ -118,24 +117,28 @@ def _run_coverage(
         if not os.path.exists(tif_path):
             logger.warning("Coverage layer %s missing", layer_id)
             continue
-        png_path = os.path.join(work_dir, "images", f"{layer_id}.png")
-        tif_to_png(tif_path, png_path, bounds_wgs84, colormap="terrain", circular_mask=False)
         layers.append({
             "id": layer_id,
             "name": name,
-            "url": f"/api/rasters/{task.request.id}/{layer_id}.png",
+            "url": f"/api/rasters/{task.request.id}/raw/{layer_id}.tif",
             "bounds": list(bounds_wgs84),
+            "display": {"palette": "terrain", "scale": "linear", "label": name, "nodata": -9999.0},
         })
 
     dtm_tif = os.path.join(work_dir, "dtm.tif")
     if os.path.exists(dtm_tif):
-        coverage_png_path = os.path.join(work_dir, "images", "coverage.png")
-        _render_coverage_png(dtm_tif, coverage_png_path)
+        coverage_tif = os.path.join(work_dir, "coverage.tif")
+        _write_coverage_tif(dtm_tif, coverage_tif)
         layers.append({
             "id": "coverage",
             "name": "LCM Coverage",
-            "url": f"/api/rasters/{task.request.id}/coverage.png",
+            "url": f"/api/rasters/{task.request.id}/raw/coverage.tif",
             "bounds": list(bounds_wgs84),
+            "display": {
+                "palette": [[0, 0, 255], [0, 0, 255]],
+                "scale": "linear", "vmin": 0, "vmax": 1, "nodata": 0,
+                "label": "LCM Coverage",
+            },
         })
 
     elapsed = time.monotonic() - t0
@@ -146,27 +149,21 @@ def _run_coverage(
     return layers, []
 
 
-def _render_coverage_png(dtm_tif: str, png_path: str) -> None:
-    """Generate a binary coverage PNG from a DTM GeoTIFF.
-
-    Blue (#0000FF) where DTM has valid data, transparent elsewhere.
-    """
+def _write_coverage_tif(dtm_tif: str, coverage_tif: str) -> None:
+    """Write a binary coverage raster: 1 where the DTM has valid data, 0 elsewhere."""
 
     with rasterio.open(dtm_tif) as src:
         data = src.read(1)
         nodata = src.nodata
+        profile = src.profile.copy()
 
+    valid = np.isfinite(data)
     if nodata is not None:
-        valid = np.isfinite(data) & (data != nodata)
-    else:
-        valid = np.isfinite(data)
+        valid &= data != nodata
 
-    rgba = np.zeros((data.shape[0], data.shape[1], 4), dtype=np.uint8)
-    rgba[valid, 2] = 255
-    rgba[valid, 3] = 255
-
-    os.makedirs(os.path.dirname(png_path), exist_ok=True)
-    Image.fromarray(rgba, "RGBA").save(png_path, "PNG")
+    profile.update(dtype="float32", count=1, nodata=0, compress="deflate")
+    with rasterio.open(coverage_tif, "w", **profile) as dst:
+        dst.write(valid.astype("float32"), 1)
 
 
 def _run_current(
@@ -444,8 +441,37 @@ def _run_subprocess(
         signal.signal(signal.SIGTERM, old_handler)
 
 
+def _display_for_layer(layer_id: str, name: str) -> dict[str, Any]:
+    """Display metadata consumed by the shared frontend raster plotter."""
+    is_current = "current" in layer_id
+    if layer_id in ("dtm", "dsm"):
+        palette = "terrain"
+    elif is_current:
+        palette = "plasma"
+    else:
+        palette = "magma"
+
+    is_log = layer_id.startswith("log_")
+    display: dict[str, Any] = {
+        "palette": palette,
+        "scale": "linear",
+        "label": name,
+        "circularMask": is_current,
+        # log-transformed rasters turn their nodata into NaN; leave transparent.
+        "nodata": None if is_log else -9999.0,
+    }
+    if is_log:
+        display["preTransformed"] = True
+        display["transform"] = "log1p" if layer_id == "log_current" else "none"
+    return display
+
+
 def _build_result_layers(work_dir: str, task_id: str) -> list[dict[str, Any]]:
-    """Collect layer GeoTIFFs, convert to PNGs, return API-ready layer dicts."""
+    """Collect result GeoTIFFs and return API-ready layer descriptors.
+
+    Rendering happens client-side, so each layer carries the raw GeoTIFF URL
+    plus the display metadata (palette, scale, label, nodata) the plotter needs.
+    """
     layers_raw = collect_results(work_dir)
     if not layers_raw:
         raise RuntimeError(
@@ -454,26 +480,20 @@ def _build_result_layers(work_dir: str, task_id: str) -> list[dict[str, Any]]:
             "the database may not have raster data covering this location."
         )
 
-    for layer in layers_raw:
-        tif_path = layer["tif_path"]
-        png_path = os.path.join(work_dir, "images", f"{layer['id']}.png")
-        colormap = "plasma" if "current" in layer["id"] else "magma"
-        try:
-            bounds = get_bounds_for_tif(tif_path)
-            tif_to_png(tif_path, png_path, bounds, colormap=colormap,
-                       circular_mask=("current" in layer["id"]))
-        except Exception as e:
-            logger.warning("Pre-render failed for %s: %s", layer["id"], e)
-
     result_layers = []
     for layer in layers_raw:
         tif_path = layer["tif_path"]
-        bounds = get_bounds_for_tif(tif_path)
+        try:
+            bounds = get_bounds_for_tif(tif_path)
+        except Exception as e:
+            logger.warning("Skipping %s: could not read bounds (%s)", layer["id"], e)
+            continue
         result_layers.append({
             "id": layer["id"],
             "name": layer["name"],
-            "url": f"/api/rasters/{task_id}/{layer['id']}.png",
+            "url": f"/api/rasters/{task_id}/raw/{layer['id']}.tif",
             "bounds": list(bounds),
+            "display": _display_for_layer(layer["id"], layer["name"]),
         })
 
     return result_layers
@@ -558,6 +578,7 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roo
     with rasterio.open(
         tif_path, "w", driver="GTiff", height=m, width=n, count=1,
         dtype="float32", crs="EPSG:27700", transform=transform,
+        compress="deflate",
     ) as dst:
         dst.write_band(1, arr)
 

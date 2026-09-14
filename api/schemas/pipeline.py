@@ -46,6 +46,7 @@ class ResultLayerInfo(BaseModel):
     name: str
     url: str
     bounds: tuple[float, float, float, float]
+    display: dict[str, Any] | None = None
 
 
 class RasterExtentInfo(BaseModel):

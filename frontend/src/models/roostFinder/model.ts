@@ -5,8 +5,6 @@ export const ROOST_FINDER_MODEL_ID = 'roost-finder';
 
 export const ROOST_SURFACE_LAYER_ID = 'roost_surface';
 
-export const ROOST_MARKERS_LAYER_ID = 'roost_markers';
-
 export const ROOST_INPUTS_SOURCE_ID = 'roost-finder-inputs';
 
 export interface RoostFinderInputs {
@@ -19,7 +17,7 @@ export const roostFinderModel: ModelDef = {
   id: ROOST_FINDER_MODEL_ID,
   name: 'Roost Finder',
   description: 'Estimates a bat roost location from per-detector call data.',
-  autoShowLayerIds: [ROOST_SURFACE_LAYER_ID, ROOST_MARKERS_LAYER_ID],
+  autoShowLayerIds: [ROOST_SURFACE_LAYER_ID],
   params: [
     { key: 'diffusivity', label: 'Diffusivity (m²/s)', type: 'number', min: 0.1, step: 0.1, default: 81.7 },
     { key: 'grid_size', label: 'Grid size', type: 'number', min: 2, step: 1, default: 500 },

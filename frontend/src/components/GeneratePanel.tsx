@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import JSZip from 'jszip';
 import type { PipelineStage } from '../models/horseshoeBat';
-import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDimensions, computeMinResolution, extractResultLayers } from '@gsbio/engine';
+import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDimensions, computeMinResolution, extractResultLayers, downloadLayerZip } from '@gsbio/engine';
 import type { RunLogEntry, DataFeature } from '@gsbio/engine';
 import { RunPanel, ResultsPanel } from '@gsbio/engine';
 import { RunLogModal } from './RunLogModal';
-import { fetchWithAuth } from '../auth';
+import { fetchBytes } from '../utils/fetchBytes';
 
 const MAX_PIXEL_DIMENSION = 2000;
 
@@ -50,25 +49,7 @@ export function GeneratePanel() {
     const rec = engine.findRun(runId);
     if (!rec?.result) return;
     try {
-      const zip = new JSZip();
-      for (const layer of extractResultLayers(rec.result)) {
-        if (layer.envelope.kind !== 'image') continue;
-        const isWasm = layer.envelope.url.startsWith('blob:');
-        const res = isWasm ? await fetch(layer.envelope.url) : await fetchWithAuth(layer.envelope.url);
-        if (res.ok) {
-          const name = (layer.name ?? layer.id).toLowerCase().replace(/\s+/g, '_');
-          zip.file(`${name}.png`, await res.blob());
-        }
-      }
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'results.zip';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadLayerZip('results.zip', extractResultLayers(rec.result), fetchBytes);
     } catch (err) {
       console.error('Download failed:', err);
     }

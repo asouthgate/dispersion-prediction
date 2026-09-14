@@ -14,7 +14,8 @@ export async function fetchRaster(url: string): Promise<RasterData> {
   const tif = await fromArrayBuffer(buffer);
   const image = await tif.getImage();
   const rasters = await image.readRasters();
-  const data = rasters[0] as Float32Array;
+  const first = rasters[0] as ArrayLike<number>;
+  const data = first instanceof Float32Array ? first : Float32Array.from(first);
   return { data, m: image.getHeight(), n: image.getWidth() };
 }
 

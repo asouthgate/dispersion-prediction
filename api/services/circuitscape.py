@@ -90,5 +90,6 @@ def asc_to_geotiff(asc_path: str, tif_path: str, log_transform: bool = False) ->
     with rasterio.open(
         tif_path, "w", driver="GTiff", height=height, width=width, count=1,
         dtype="float32", crs="EPSG:27700", transform=transform,
+        compress="deflate",
     ) as dst:
         dst.write(data, 1)

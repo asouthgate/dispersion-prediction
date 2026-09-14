@@ -1,8 +1,8 @@
 import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
 import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
+import { plotRaster, encodeGeoTiff } from '@gsbio/engine';
 import { runPipelineBrowser, rasterizeGeojson, type ResistanceParams, type ResistanceResult } from '../../wasm/resistanceCompute';
 import { fetchRaster } from '../../wasm/geotiffFetch';
-import { rasterToPngBlobUrl } from '../../wasm/rasterize';
 import { fetchWithAuth } from '../../auth';
 
 export type LogFn = (level: 'info' | 'warning' | 'error', message: string) => void;
@@ -348,24 +348,27 @@ export async function buildResistanceResultLayers(
   coverageMask: Uint8Array,
   extent: Extent,
 ): Promise<ResultLayerEntry[]> {
-  const bngExtent = [extent.xmin, extent.ymin, extent.xmax, extent.ymax] as const;
+  const bngExtent: [number, number, number, number] = [extent.xmin, extent.ymin, extent.xmax, extent.ymax];
   const bounds = bngBoundsToWgs84(bngExtent);
   const { m, n } = extent;
 
   const layers: ResultLayerEntry[] = [];
 
-  const addLayer = async (id: string, name: string, data: Float32Array) => {
+  const addLayer = async (id: string, name: string, data: Float32Array, scale: 'linear' | 'log' = 'linear') => {
     const masked = applyMask(data, coverageMask);
-    layers.push({ id, name, envelope: { kind: 'image', url: await rasterToPngBlobUrl(masked, m, n), bounds } });
-  };
-
-  const addLogLayer = async (id: string, name: string, data: Float32Array) => {
-    const logData = new Float32Array(data);
-    for (let i = 0; i < logData.length; i++) {
-      logData[i] = Number.isNaN(logData[i]) ? NaN : (logData[i] > 0 ? Math.log(logData[i]) : 0);
-    }
-    const masked = applyMask(logData, coverageMask);
-    layers.push({ id, name, envelope: { kind: 'image', url: await rasterToPngBlobUrl(masked, m, n), bounds } });
+    const plotted = await plotRaster(
+      { data: masked, width: n, height: m, boundsWgs84: bounds },
+      { palette: 'magma', scale, label: name, colorbar: { side: 'right' } },
+    );
+    const tif = new Uint8Array(
+      encodeGeoTiff({ data: masked, width: n, height: m }, { bounds: bngExtent }),
+    );
+    layers.push({
+      id,
+      name,
+      envelope: { kind: 'image', url: plotted.url, bounds: plotted.boundsWgs84 },
+      raw: { filename: `${id}.tif`, bytes: tif },
+    });
   };
 
   await Promise.all([
@@ -373,13 +376,13 @@ export async function buildResistanceResultLayers(
     addLayer('river_res', 'River Resistance', result.riverRes),
     addLayer('linear_res', 'Linear Resistance', result.linearRes),
     addLayer('lamp_res', 'Lamp Resistance', result.lampRes),
-    addLogLayer('log_lamp_res', 'Log Lamp Resistance', result.lampRes),
+    addLayer('log_lamp_res', 'Log Lamp Resistance', result.lampRes, 'log'),
     addLayer('generic_res', 'Generic Resistance', result.genericRes),
     addLayer('soft_surf', 'Soft Surface', result.softSurf),
     addLayer('hard_surf', 'Hard Surface', result.hardSurf),
     addLayer('total_res', 'Total Resistance', result.totalRes),
     addLayer('landscape_res', 'Landscape Resistance', result.landscapeRes),
-    addLogLayer('log_total_res', 'Log Total Resistance', result.totalRes),
+    addLayer('log_total_res', 'Log Total Resistance', result.totalRes, 'log'),
   ]);
 
   return layers;
