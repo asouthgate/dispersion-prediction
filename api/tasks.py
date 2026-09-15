@@ -17,7 +17,6 @@ from typing import Any
 import redis as _sync_redis
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
-from pyproj import Transformer
 
 import base64
 import rasterio
@@ -109,7 +108,6 @@ def _run_coverage(
     easting, northing = wgs84_to_bng(roost["lng"], roost["lat"])
     radius = roost.get("radiusMeters", roost.get("radius_meters", 2500))
     extent_bng = (easting - radius, northing - radius, easting + radius, northing + radius)
-    bounds_wgs84 = _bng_to_wgs84(extent_bng)
 
     layers = []
     for layer_id, name in (("dtm", "Digital Terrain Model"), ("dsm", "Digital Surface Model")):
@@ -121,7 +119,8 @@ def _run_coverage(
             "id": layer_id,
             "name": name,
             "url": f"/api/rasters/{task.request.id}/raw/{layer_id}.tif",
-            "bounds": list(bounds_wgs84),
+            "bounds": list(extent_bng),
+            "crs": "EPSG:27700",
             "display": {"palette": "terrain", "scale": "linear", "label": name, "nodata": -9999.0},
         })
 
@@ -133,7 +132,8 @@ def _run_coverage(
             "id": "coverage",
             "name": "LCM Coverage",
             "url": f"/api/rasters/{task.request.id}/raw/coverage.tif",
-            "bounds": list(bounds_wgs84),
+            "bounds": list(extent_bng),
+            "crs": "EPSG:27700",
             "display": {
                 "palette": [[0, 0, 255], [0, 0, 255]],
                 "scale": "linear", "vmin": 0, "vmax": 1, "nodata": 0,
@@ -199,15 +199,6 @@ def _run_current(
     elapsed = time.monotonic() - t0
     logger.info("Current pipeline completed in %.1fs, %d layers", elapsed, len(result_layers))
     return result_layers, []
-
-
-def _bng_to_wgs84(extent_bng: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
-    """Convert BNG extent to WGS84 bounds [west, south, east, north]."""
-    transformer = Transformer.from_crs("EPSG:27700", "EPSG:4326", always_xy=True)
-    xmin, ymin, xmax, ymax = extent_bng
-    west, south = transformer.transform(xmin, ymin)
-    east, north = transformer.transform(xmax, ymax)
-    return (west, south, east, north)
 
 
 def _sanitize_error(message: str) -> str:
@@ -493,6 +484,7 @@ def _build_result_layers(work_dir: str, task_id: str) -> list[dict[str, Any]]:
             "name": layer["name"],
             "url": f"/api/rasters/{task_id}/raw/{layer['id']}.tif",
             "bounds": list(bounds),
+            "crs": "EPSG:27700",
             "display": _display_for_layer(layer["id"], layer["name"]),
         })
 

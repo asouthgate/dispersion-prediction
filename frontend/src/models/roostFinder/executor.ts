@@ -19,15 +19,6 @@ export interface RoostFinderSummary {
 /** Contour levels as fractions of the maximum loss (matches the paper). */
 const CONTOUR_LEVELS = [0.1, 0.2, 0.3, 0.4];
 
-function bngBoundsToWgs84(
-  bounds: [number, number, number, number],
-): [number, number, number, number] {
-  const [xmin, ymin, xmax, ymax] = bounds;
-  const [west, south] = bngToWgs84LngLat(xmin, ymin);
-  const [east, north] = bngToWgs84LngLat(xmax, ymax);
-  return [west, south, east, north];
-}
-
 function annotations(raw: RoostFinderWasmResult): RasterAnnotation[] {
   const out: RasterAnnotation[] = raw.detectors.map((d) => {
     const [lng, lat] = bngToWgs84LngLat(d.x, d.y);
@@ -71,7 +62,8 @@ export function createRoostFinderExecutor(): Executor {
         data,
         width: raw.grid_size,
         height: raw.grid_size,
-        boundsWgs84: bngBoundsToWgs84(raw.bounds_bng),
+        crs: 'EPSG:27700' as const,
+        bounds: raw.bounds_bng,
       };
       const boundsBng = raw.bounds_bng;
 
