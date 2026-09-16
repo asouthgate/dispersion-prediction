@@ -15,6 +15,7 @@ export interface JobStatus {
     id: string;
     name: string;
     url: string;
+    crs: 'EPSG:27700' | 'EPSG:4326';
     bounds: [number, number, number, number];
     display?: Record<string, unknown>;
   }[];

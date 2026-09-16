@@ -1,5 +1,5 @@
 import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
-import { wgs84ToBng, bngToWgs84LngLat } from '../../utils/projections';
+import { wgs84ToBng } from '../../utils/projections';
 import { plotRaster, encodeGeoTiff } from '@gsbio/engine';
 import { runPipelineBrowser, rasterizeGeojson, type ResistanceParams, type ResistanceResult } from '../../wasm/resistanceCompute';
 import { fetchRaster } from '../../wasm/geotiffFetch';
@@ -41,14 +41,6 @@ function bngToPixel(
   const col = (easting - extent.xmin) / extent.pixw;
   const row = (extent.ymax - northing) / extent.pixw;
   return [col, row];
-}
-
-function bngBoundsToWgs84(
-  [xmin, ymin, xmax, ymax]: readonly [number, number, number, number],
-): [number, number, number, number] {
-  const [west, south] = bngToWgs84LngLat(xmin, ymin);
-  const [east, north] = bngToWgs84LngLat(xmax, ymax);
-  return [west, south, east, north];
 }
 
 async function fetchGeojson(url: string): Promise<string> {
@@ -362,7 +354,6 @@ export async function buildResistanceResultLayers(
   extent: Extent,
 ): Promise<ResultLayerEntry[]> {
   const bngExtent: [number, number, number, number] = [extent.xmin, extent.ymin, extent.xmax, extent.ymax];
-  const bounds = bngBoundsToWgs84(bngExtent);
   const { m, n } = extent;
 
   const layers: ResultLayerEntry[] = [];
@@ -370,7 +361,7 @@ export async function buildResistanceResultLayers(
   const addLayer = async (id: string, name: string, data: Float32Array, scale: 'linear' | 'log' = 'linear') => {
     const masked = applyMask(data, coverageMask);
     const plotted = await plotRaster(
-      { data: masked, width: n, height: m, boundsWgs84: bounds },
+      { data: masked, width: n, height: m, crs: 'EPSG:27700', bounds: bngExtent },
       { palette: 'magma', scale, label: name, colorbar: { side: 'right' } },
     );
     const tif = new Uint8Array(

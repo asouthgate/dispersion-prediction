@@ -160,7 +160,7 @@ export function createHorseshoeBatExecutor(): Executor {
             colorbar: { side: 'right' },
           };
           const out = await plotRaster(
-            { data: raster.data, width: raster.n, height: raster.m, boundsWgs84: l.bounds, nodata },
+            { data: raster.data, width: raster.n, height: raster.m, crs: l.crs, bounds: l.bounds, nodata },
             spec,
           );
           return {
