@@ -5,13 +5,14 @@ import type {
   SimulationEngine,
   RasterPlotSpec,
 } from '@gsbio/engine';
-import { plotRaster } from '@gsbio/engine';
+import { plotRaster, alignRasterToGrid } from '@gsbio/engine';
 import type { PipelineStage } from './model';
 import { horseshoeBatModel } from './model';
 import { createPipelineAdapter } from './pipelineClient';
 import { runRemoteJob } from '@gsbio/engine/remote';
 import { fetchRaster } from '../../wasm/geotiffFetch';
 import { ingestResistanceData, computeResistancePipeline, buildResistanceResultLayers, encodeTotalResistance, type StoredTotalRes } from './resistancePipeline';
+import { LIGHTMAP_CATEGORY, type LightMapData } from './lightMap';
 import type { ResistanceParams } from '../../wasm/resistanceCompute';
 
 const LAMP_CATEGORIES = new Set(['Lights', 'LightSequence']);
@@ -47,6 +48,7 @@ interface PipelinePayload {
   features: FeaturePayload[];
   lampFeatures: DataFeature[];
   resistanceFeatures: DataFeature[];
+  lightMapFeature: DataFeature | null;
   params: Record<string, number>;
 }
 
@@ -57,6 +59,17 @@ function selectRoost(features: ReadonlyArray<DataFeature>): RoostInfo | null {
     }
   }
   return null;
+}
+
+function findLightMapFeature(features: ReadonlyArray<DataFeature>): DataFeature | null {
+  return features.find((f) => f.category === LIGHTMAP_CATEGORY) ?? null;
+}
+
+function lightMapData(feature: DataFeature | null | undefined): LightMapData | null {
+  if (!feature) return null;
+  const raster = feature.data?.raster as LightMapData | null | undefined;
+  if (!raster || !raster.data || !raster.width || !raster.height) return null;
+  return raster;
 }
 
 function featureToPayload(f: DataFeature): FeaturePayload {
@@ -85,7 +98,14 @@ export function createHorseshoeBatExecutor(): Executor {
       }
       const lampFeatures = ctx.features.filter(f => LAMP_CATEGORIES.has(f.category));
       const resistanceFeatures = ctx.features.filter(f => RESISTANCE_CATEGORIES.has(f.category));
-      const nonLampFeatures = ctx.features.filter(f => !LAMP_CATEGORIES.has(f.category));
+      const lightMapFeature = findLightMapFeature(ctx.features);
+      const nonLampFeatures = ctx.features.filter(f => !LAMP_CATEGORIES.has(f.category) && f.category !== LIGHTMAP_CATEGORY);
+
+      if (lampFeatures.length > 0 && lightMapFeature) {
+        ctx.onLog?.('error', 'Provide either lamp points (Lighting) or a light map, not both.');
+        throw new Error('Provide either lamp points or a light map, not both.');
+      }
+
       return {
         payload: {
           stage: ctx.stage as PipelineStage,
@@ -93,6 +113,7 @@ export function createHorseshoeBatExecutor(): Executor {
           features: nonLampFeatures.map(featureToPayload),
           lampFeatures: lampFeatures as DataFeature[],
           resistanceFeatures: resistanceFeatures as DataFeature[],
+          lightMapFeature,
           params: { ...ctx.params },
         },
       };
@@ -100,13 +121,15 @@ export function createHorseshoeBatExecutor(): Executor {
 
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { stage, roost, features, lampFeatures, resistanceFeatures, params } = ctx.payload as PipelinePayload;
+      const { stage, roost, features, lampFeatures, resistanceFeatures, lightMapFeature, params } = ctx.payload as PipelinePayload;
+      const lightMap = lightMapData(lightMapFeature);
 
       ctx.onLog?.('info', `Starting ${stage} pipeline · ${features.length} features` +
         (lampFeatures.length > 0 ? ` · ${lampFeatures.length} lamp(s) (browser-side)` : '') +
-        (resistanceFeatures.length > 0 ? ` · ${resistanceFeatures.length} drawn (browser-side)` : ''));
+        (resistanceFeatures.length > 0 ? ` · ${resistanceFeatures.length} drawn (browser-side)` : '') +
+        (lightMap ? ' · light map (browser-side)' : ''));
 
-      if (lampFeatures.length > 0 || resistanceFeatures.length > 0) {
+      if (lampFeatures.length > 0 || resistanceFeatures.length > 0 || lightMap) {
         ctx.onLog?.('info', 'Resistance layers will be computed locally in your browser via WebAssembly.');
       }
 
@@ -200,12 +223,25 @@ export function createHorseshoeBatExecutor(): Executor {
             ncols: extent.n,
           };
 
+          const lightmap = lightMap
+            ? alignRasterToGrid(lightMap, {
+                m: extent.m,
+                n: extent.n,
+                pixw: extent.pixw,
+                xmin: extent.xmin,
+                ymin: extent.ymin,
+                xmax: extent.xmax,
+                ymax: extent.ymax,
+              })
+            : undefined;
+
           const { pipelineInput, coverageMask, extractedLampCount } = await ingestResistanceData({
             rawTifs: jobResult.raw_tifs,
             rawGeojson: jobResult.raw_geojson,
             features: [...lampFeatures, ...resistanceFeatures],
             extent,
             params: rastParams,
+            lightmap,
             onProgress: (fraction, label) => {
               ctx.onProgress?.({ step: 'submit', fraction: 0.95 + fraction * 0.05, label });
               ctx.onLog?.('info', label);
@@ -217,7 +253,9 @@ export function createHorseshoeBatExecutor(): Executor {
           layers.push(...(await buildResistanceResultLayers(pipelineResult, coverageMask, extent)));
           ctx.artifacts.set<StoredTotalRes>('total_resistance', { data: pipelineResult.totalRes, extent });
 
-          if (lampFeatures.length > 0) {
+          if (lightmap) {
+            ctx.onLog?.('info', 'All resistance layers computed browser-side from the imported light map. Total resistance ready for Circuitscape.');
+          } else if (lampFeatures.length > 0) {
             ctx.onLog?.('info', `All resistance layers computed browser-side (${extractedLampCount} lamp point(s)). Total resistance ready for Circuitscape.`);
           } else {
             ctx.onLog?.('info', 'All resistance layers computed browser-side. Total resistance ready for Circuitscape.');

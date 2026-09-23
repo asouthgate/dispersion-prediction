@@ -158,6 +158,13 @@ export interface ResistancePipelineInput {
   dsm: Float32Array;
   landscapeConductance: Float32Array;
   lamps: Float32Array;
+  /**
+   * Pre-computed light map (irradiance raster) already aligned to the
+   * DTM/DSM grid. When present, the pipeline skips the raycasted irradiance
+   * and derives lamp resistance by normalising this map (see
+   * `runPipelineBrowser`).
+   */
+  lightmap?: Float32Array;
   /** All resistance parameters, fully populated. No defaults are applied. */
   params: ResistanceParams;
 }
@@ -178,6 +185,8 @@ export interface DataIngestionInput {
   extent: Extent;
   /** Fully populated resistance parameters. No defaults will be applied. */
   params: ResistanceParams;
+  /** Optional pre-computed light map aligned to the raster extent. */
+  lightmap?: Float32Array;
   onProgress?: ProgressFn;
 }
 
@@ -194,7 +203,7 @@ export async function ingestResistanceData(
   coverageMask: Uint8Array;
   extractedLampCount: number;
 }> {
-  const { rawTifs, rawGeojson, features, extent, params, onProgress } = input;
+  const { rawTifs, rawGeojson, features, extent, params, lightmap, onProgress } = input;
 
   const size = extent.m * extent.n;
 
@@ -311,6 +320,7 @@ export async function ingestResistanceData(
       dsm: rasters['dsm'],
       landscapeConductance: rasters['landscape_conductance'],
       lamps,
+      ...(lightmap ? { lightmap } : {}),
       params,
     },
     coverageMask,
@@ -336,6 +346,7 @@ export async function computeResistancePipeline(input: ResistancePipelineInput):
     input.lamps,
     input.landscapeConductance,
     input.params,
+    input.lightmap,
   );
   return result;
 }
