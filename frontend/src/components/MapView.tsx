@@ -91,6 +91,7 @@ const featureStyles: FeatureStyleConfig = {
           return { mode: t.mode, category: t.category ?? t.label, style: base };
       }
     }),
+    { mode: 'polygon', category: 'LightMap', style: { fillColor: '#ffbd17', fillOpacity: 0.15, outlineColor: '#ffbd17', outlineWidth: 2 } },
   ],
 };
 

@@ -4,7 +4,7 @@ import { FeaturePanel } from './FeaturePanel';
 import { ParameterPanel } from './ParameterPanel';
 import { RoostPanel } from './RoostPanel';
 import { GeneratePanel } from './GeneratePanel';
-import { FileUpload } from './CsvUpload';
+import { LightUpload } from './LightUpload';
 import { HelpPanel } from './HelpPanel';
 import { RoostFinderImport, RoostFinderParams, RoostFinderRun } from './RoostFinderPanel';
 import { Sun, Settings, EditPencilLine01, Layers, CircleHelp, FileUpload as FileUploadIcon, Play, Map, MapPin } from 'react-coolicons';
@@ -23,10 +23,10 @@ export type { PanelTab };
 const iconStyle = { width: 16, height: 16 };
 
 const CONNECTIVITY_SECTIONS: SectionDef[] = [
-  { id: 'lights', icon: <Sun style={iconStyle} />, label: 'Street Lights' },
+  { id: 'lights', icon: <Sun style={iconStyle} />, label: 'Lighting' },
   { id: 'params', icon: <Settings style={iconStyle} />, label: 'Parameters' },
   { id: 'roost', icon: '◉', label: 'Roost' },
-  { id: 'drawings', icon: <EditPencilLine01 style={iconStyle} />, label: 'Drawings' },
+  { id: 'drawings', icon: <EditPencilLine01 style={iconStyle} />, label: 'Features' },
   { id: 'generate', icon: <Layers style={iconStyle} />, label: 'Generate' },
   { id: 'help', icon: <CircleHelp style={iconStyle} />, label: 'Help' },
 ];
@@ -82,7 +82,7 @@ export function SidePanel({ activeTab, onTabChange, collapsed, onToggleCollapsed
 
   const renderBody = (id: string) => {
     switch (id) {
-      case 'lights': return <FileUpload />;
+      case 'lights': return <LightUpload />;
       case 'params': return activeTab === 'roost' ? <RoostFinderParams /> : <ParameterPanel />;
       case 'roost': return <RoostPanel />;
       case 'drawings': return <FeaturePanel />;

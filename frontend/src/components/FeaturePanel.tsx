@@ -69,6 +69,10 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
   const showHeight = !isCollection && (feature.category === 'Building' || feature.category === 'Lights' || feature.category === 'LightSequence');
   const showSpacing = !isCollection && feature.category === 'LightSequence';
   const showResistanceValue = !isCollection && feature.category === 'GenericResistance';
+  const showLightMap = feature.category === 'LightMap';
+  const raster = showLightMap
+    ? feature.data?.raster as { width?: number; height?: number; crs?: string } | undefined
+    : undefined;
 
   return (
     <div
@@ -145,6 +149,13 @@ function FeatureCard({ feature }: { feature: DataFeature }) {
           </label>
         </div>
       )}
+      {showLightMap && (
+        <div className="feature-card-extra">
+          <span className="field-label">
+            {raster?.width}&times;{raster?.height} px · {raster?.crs}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -172,9 +183,10 @@ export function FeaturePanel() {
   };
 
   const handleExport = () => {
+    const exportable = features.filter((f) => f.category !== 'LightMap');
     const fc: GeoJSON.FeatureCollection = {
       type: 'FeatureCollection',
-      features: features.map((f) => {
+      features: exportable.map((f) => {
         const gj = JSON.parse(JSON.stringify(f.geojson));
         if (!gj.properties) gj.properties = {};
         gj.properties._dp_category = f.category;
@@ -188,7 +200,7 @@ export function FeaturePanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'drawings.geojson';
+    a.download = 'features.geojson';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -239,20 +251,20 @@ export function FeaturePanel() {
   return (
     <div className="feature-panel">
       <div className="feature-panel__actions">
-        <button className="btn-ghost feature-panel__action-btn" onClick={allHidden ? showAll : hideAll} disabled={showEmpty} title={allHidden ? 'Show all drawings' : 'Hide all drawings'}>
+        <button className="btn-ghost feature-panel__action-btn" onClick={allHidden ? showAll : hideAll} disabled={showEmpty} title={allHidden ? 'Show all features' : 'Hide all features'}>
           {allHidden ? <Show style={{ width: 12, height: 12 }} /> : <Hide style={{ width: 12, height: 12 }} />}
           {allHidden ? ' Show all' : ' Hide all'}
         </button>
-        <button className="btn-ghost feature-panel__action-btn" onClick={handleExport} disabled={showEmpty} title="Export drawings">
+        <button className="btn-ghost feature-panel__action-btn" onClick={handleExport} disabled={showEmpty} title="Export features">
           <FileDownload style={{ width: 24, height: 24 }} />
         </button>
-        <button className="btn-ghost feature-panel__action-btn" onClick={() => fileInputRef.current?.click()} title="Import drawings">
+        <button className="btn-ghost feature-panel__action-btn" onClick={() => fileInputRef.current?.click()} title="Import features">
           <FileUpload style={{ width: 24, height: 24 }} />
         </button>
         <input ref={fileInputRef} type="file" accept=".geojson,.json" onChange={handleImport} style={{ display: 'none' }} />
       </div>
       {showEmpty ? (
-        <p className="hint">Use the toolbar above the map to draw features, or import lamps from the Street Lights section.</p>
+        <p className="hint">Use the toolbar above the map to draw features, or import lamps from the Lighting section.</p>
       ) : (
         <div className="data-feature-list">
           {features.map((f) => <FeatureCard key={f.id} feature={f} />)}

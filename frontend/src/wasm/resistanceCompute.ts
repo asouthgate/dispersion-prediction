@@ -1,6 +1,7 @@
 import {
   rasterizeGeojsonAsync,
   runResistancePipelineBrowserAsync,
+  runResistancePipelineBrowserWithLightmapAsync,
 } from '../../wasm-connectivity/lib/wasm.js';
 
 function f32ToF64(arr: Float32Array): Float64Array {
@@ -101,6 +102,7 @@ export async function runPipelineBrowser(
   lamps: Float32Array,
   landscapeConductance: Float32Array,
   params: ResistanceParams,
+  lightmap?: Float32Array,
 ): Promise<ResistanceResult> {
   const args: Float64Array[] = [
     roadBinary, riverBinary, buildingMask, dtm, dsm, genericResistance, lamps, landscapeConductance,
@@ -108,10 +110,15 @@ export async function runPipelineBrowser(
 
   const paramsJson = JSON.stringify(params);
 
-  const json = await runResistancePipelineBrowserAsync(
-    args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
-    paramsJson,
-  );
+  const json = lightmap
+    ? await runResistancePipelineBrowserWithLightmapAsync(
+        args[0], args[1], args[2], args[3], args[4], args[5], f32ToF64(lightmap), args[7],
+        paramsJson,
+      )
+    : await runResistancePipelineBrowserAsync(
+        args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
+        paramsJson,
+      );
 
   const parsed = JSON.parse(json);
 
