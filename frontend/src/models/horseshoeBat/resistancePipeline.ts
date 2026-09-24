@@ -205,6 +205,18 @@ export async function ingestResistanceData(
 }> {
   const { rawTifs, rawGeojson, features, extent, params, lightmap, onProgress } = input;
 
+  // Vector rasterization assumes square pixels (a single `pixw` for both axes).
+  // Fail loudly if the server hands back a non-square grid rather than silently
+  // misplacing roads/lamps.
+  const pixwX = extent.n > 0 ? (extent.xmax - extent.xmin) / extent.n : 0;
+  const pixwY = extent.m > 0 ? (extent.ymax - extent.ymin) / extent.m : 0;
+  const pixwScale = Math.max(Math.abs(pixwX), Math.abs(pixwY));
+  if (pixwScale > 0 && Math.abs(pixwX - pixwY) > 1e-6 * pixwScale) {
+    throw new Error(
+      `Raster grid is not square (pixel width ${pixwX.toFixed(4)} != pixel height ${pixwY.toFixed(4)}); cannot rasterize vector features.`,
+    );
+  }
+
   const size = extent.m * extent.n;
 
   onProgress?.(0.05, 'Fetching DTM/DSM/Landscape conductance...');

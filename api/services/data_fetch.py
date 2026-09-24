@@ -2,9 +2,12 @@
 
 Writes GeoTIFFs (rasters) and GeoJSON files (vectors) into the work directory
 for the wasm-connectivity resistance-pipeline binary to consume.
+
+The database queries live in :func:`query_raster_values` and
+:func:`query_vector_geojson`; everything downstream (grid construction,
+resampling, file writing) is DB-free and unit-testable.
 """
 
-import io
 import json
 import logging
 import os
@@ -14,13 +17,15 @@ import numpy as np
 import psycopg2
 import psycopg2.sql as pgsql
 import rasterio
-from rasterio.transform import from_bounds
-from rasterio.warp import reproject, Resampling
 from rasterio.crs import CRS
+from rasterio.transform import from_bounds
+from rasterio.warp import Resampling, reproject
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DB_NAME = "bats"
+CRS_BNG = "EPSG:27700"
+NODATA = -9999.0
 
 
 def _get_db_config():
@@ -57,19 +62,21 @@ def _connect(cfg):
     )
 
 
-def _write_tiff_sidecar(work_dir, xmin, ymax, pixw, nrows, ncols):
-    info = {
-        "xmin": xmin,
-        "ymax": ymax,
-        "pixw": pixw,
-        "nrows": nrows,
-        "ncols": ncols,
-    }
-    with open(os.path.join(work_dir, "grid_info.json"), "w") as f:
-        json.dump(info, f)
+# ---------------------------------------------------------------------------
+# Database query functions
+# ---------------------------------------------------------------------------
 
 
-def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
+def query_raster_values(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
+    """Clip+resample a raster table to the requested extent and return its values.
+
+    Returns ``(values, envelope)`` where ``values`` is a float32 array of shape
+    ``(nrows, ncols)`` and ``envelope`` is the actual ``[xmin, ymin, xmax, ymax]``
+    covered by the returned raster. The envelope can be *smaller* (and
+    non-square) than the requested extent when the data does not fully cover it.
+
+    Returns ``None`` when there is no data.
+    """
     cur = conn.cursor()
     try:
         cur.execute(
@@ -100,33 +107,28 @@ def _fetch_raster_as_tiff(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
             return None
 
         vals, rxmin, rymin, rxmax, rymax = row
-
         if isinstance(vals, str):
             vals = json.loads(vals.replace("{", "[").replace("}", "]"))
 
         arr = np.array(vals, dtype=np.float32)
-
         if arr.shape != (nrows, ncols):
             logger.warning(
                 "ST_DumpValues returned shape %s, expected (%d, %d)",
                 arr.shape, nrows, ncols,
             )
-            arr = np.zeros((nrows, ncols), dtype=np.float32)
+            return None
 
-        transform = from_bounds(rxmin, rymin, rxmax, rymax, ncols, nrows)
-        buf = io.BytesIO()
-        with rasterio.open(
-            buf, "w", driver="GTiff", height=nrows, width=ncols,
-            count=1, dtype=np.float32, crs="EPSG:27700",
-            transform=transform, nodata=-9999.0, compress="deflate",
-        ) as dst:
-            dst.write(arr, 1)
-        return buf.getvalue()
+        envelope = (float(rxmin), float(rymin), float(rxmax), float(rymax))
+        return arr, envelope
     finally:
         cur.close()
 
 
-def _fetch_vector_as_geojson(conn, table, layer_name, xmin, ymin, xmax, ymax):
+def query_vector_geojson(conn, table, layer_name, xmin, ymin, xmax, ymax):
+    """Return a GeoJSON FeatureCollection string for a vector table within the extent.
+
+    Returns ``None`` when there are no features.
+    """
     cur = conn.cursor()
     try:
         cur.execute(
@@ -154,7 +156,138 @@ def _fetch_vector_as_geojson(conn, table, layer_name, xmin, ymin, xmax, ymax):
         cur.close()
 
 
-def _merge_drawn_features(work_dir, geojson_files):
+# ---------------------------------------------------------------------------
+# Grid / raster helpers (no database)
+# ---------------------------------------------------------------------------
+
+
+def target_square_grid(xmin, ymin, xmax, ymax, resolution):
+    """Build a square raster grid anchored on the requested extent.
+
+    Returns ``(ncols, nrows, transform)``. Because the extent is square
+    (``xmax - xmin == ymax - ymin``) and ``ncols == nrows``, the pixels are
+    square (``transform.a == -transform.e``).
+    """
+    ncols = int((xmax - xmin) / resolution)
+    nrows = int((ymax - ymin) / resolution)
+    transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
+    return ncols, nrows, transform
+
+
+def resample_to_grid(values, src_transform, dst_transform, dst_width, dst_height, nodata=NODATA):
+    """Reproject ``values`` from ``src_transform`` onto a target grid.
+
+    ``values`` is a 2D float array on the source grid (in EPSG:27700). Cells of
+    the target grid that fall outside the source footprint are filled with
+    ``nodata``.
+    """
+    dst = np.full((dst_height, dst_width), nodata, dtype=np.float32)
+    reproject(
+        source=values.astype(np.float32),
+        destination=dst,
+        src_transform=src_transform,
+        src_crs=CRS.from_string(CRS_BNG),
+        dst_transform=dst_transform,
+        dst_crs=CRS.from_string(CRS_BNG),
+        resampling=Resampling.bilinear,
+        src_nodata=nodata,
+        dst_nodata=nodata,
+    )
+    return dst
+
+
+def write_raster_tif(path, values, transform, crs=CRS_BNG, nodata=NODATA):
+    """Write a single-band float32 GeoTIFF."""
+    height, width = values.shape
+    with rasterio.open(
+        path, "w", driver="GTiff", height=height, width=width,
+        count=1, dtype="float32", crs=crs, transform=transform,
+        nodata=nodata, compress="deflate",
+    ) as dst:
+        dst.write(values.astype(np.float32), 1)
+
+
+def _write_tiff_sidecar(work_dir, transform, nrows, ncols):
+    info = {
+        "xmin": transform.c,
+        "ymax": transform.f,
+        "pixw": abs(transform.a),
+        "nrows": nrows,
+        "ncols": ncols,
+    }
+    with open(os.path.join(work_dir, "grid_info.json"), "w") as f:
+        json.dump(info, f)
+
+
+# ---------------------------------------------------------------------------
+# Fetch orchestration
+# ---------------------------------------------------------------------------
+
+
+def fetch_raster_stack(conn, work_dir, rasters, extent, resolution):
+    """Fetch ``rasters`` (list of ``(name, table)``) onto a common square grid.
+
+    Each raster is resampled to the square grid anchored on the requested
+    extent (padding missing coverage with nodata), so all rasters share a single
+    aligned grid. Writes ``work_dir/{name}.tif``.
+
+    Returns ``(transform, ncols, nrows)`` of the square grid.
+    """
+    xmin, ymin, xmax, ymax = extent
+    ncols, nrows, transform = target_square_grid(xmin, ymin, xmax, ymax, resolution)
+
+    for name, table in rasters:
+        out_path = os.path.join(work_dir, f"{name}.tif")
+        logger.info("Fetching %s raster from %s...", name, table)
+
+        fetched = query_raster_values(conn, table, xmin, ymin, xmax, ymax, ncols, nrows)
+        if fetched is None:
+            logger.warning("%s returned no data, writing zeros", name)
+            write_raster_tif(out_path, np.zeros((nrows, ncols), dtype=np.float32), transform)
+            continue
+
+        values, envelope = fetched
+        rxmin, rymin, rxmax, rymax = envelope
+        src_transform = from_bounds(rxmin, rymin, rxmax, rymax, ncols, nrows)
+        if src_transform != transform:
+            values = resample_to_grid(values, src_transform, transform, ncols, nrows)
+
+        write_raster_tif(out_path, values, transform)
+        logger.info("Wrote %s.tif (%dx%d) on square grid", name, ncols, nrows)
+
+    return transform, ncols, nrows
+
+
+def fetch_vector_stack(conn, work_dir, vectors, extent):
+    """Fetch ``vectors`` (list of ``(name, table)``) as GeoJSON and merge drawn features.
+
+    A ``table`` of ``None`` means there is no DB source; an empty
+    FeatureCollection is written instead. User-drawn features (from GPKG files)
+    are merged on top afterwards.
+    """
+    xmin, ymin, xmax, ymax = extent
+
+    for name, table in vectors:
+        path = os.path.join(work_dir, f"{name}.geojson")
+        if table:
+            logger.info("Fetching %s vectors from %s...", name, table)
+            gj = query_vector_geojson(conn, table, name, xmin, ymin, xmax, ymax)
+        else:
+            gj = None
+
+        if gj is None:
+            if table:
+                logger.warning("No %s vectors found", name)
+            gj = json.dumps({"type": "FeatureCollection", "features": []})
+
+        with open(path, "w") as f:
+            f.write(gj)
+        logger.info("Wrote %s.geojson (%d bytes)", name, len(gj))
+
+    _merge_drawn_features(work_dir)
+
+
+def _merge_drawn_features(work_dir):
     gpkg_map = {
         "drawn_building.gpkg": "buildings.geojson",
         "drawn_road.gpkg": "roads.geojson",
@@ -209,70 +342,13 @@ def _merge_drawn_features(work_dir, geojson_files):
         )
 
 
-def _resample_to_grid(src_path, ref_transform, ref_width, ref_height, dst_crs="EPSG:27700"):
-    """Resample a raster to match a reference grid, overwriting the file in place."""
-    dst_path = src_path + ".resampled"
-    try:
-        with rasterio.open(src_path) as src:
-            src_data = src.read(1)
-            logger.debug(
-                "_resample_to_grid: %s src=(%dx%d, bounds=[%.2f,%.2f,%.2f,%.2f]) "
-                "→ ref=(%dx%d, bounds=[%.2f,%.2f,%.2f,%.2f])",
-                os.path.basename(src_path),
-                src.width, src.height,
-                src.bounds.left, src.bounds.bottom, src.bounds.right, src.bounds.top,
-                ref_width, ref_height,
-                ref_transform.c, ref_transform.f - ref_height * abs(ref_transform.e),
-                ref_transform.c + ref_width * abs(ref_transform.a), ref_transform.f,
-            )
-
-            dst_data = np.empty((ref_height, ref_width), dtype=src_data.dtype)
-
-            reproject(
-                source=src_data,
-                destination=dst_data,
-                src_transform=src.transform,
-                src_crs=src.crs,
-                dst_transform=ref_transform,
-                dst_crs=CRS.from_string(dst_crs),
-                resampling=Resampling.bilinear,
-                src_nodata=src.nodata or -9999.0,
-                dst_nodata=-9999.0,
-            )
-
-        with rasterio.open(
-            dst_path,
-            "w",
-            driver="GTiff",
-            height=ref_height,
-            width=ref_width,
-            count=1,
-            dtype=src_data.dtype,
-            crs=dst_crs,
-            transform=ref_transform,
-            nodata=-9999.0,
-            compress="deflate",
-        ) as dst:
-            dst.write(dst_data, 1)
-
-        os.replace(dst_path, src_path)
-        logger.debug("_resample_to_grid: wrote resampled %s", os.path.basename(src_path))
-    except Exception as e:
-        logger.warning("Failed to resample %s: %s", src_path, e)
-        if os.path.exists(dst_path):
-            os.unlink(dst_path)
+def _read_inputs(work_dir):
+    with open(os.path.join(work_dir, "inputs.json")) as f:
+        return json.load(f)
 
 
-def fetch_resistance_inputs(work_dir: str):
-    cfg = _get_db_config()
-    if cfg is None:
-        logger.warning("No ~/.bats.cfg found. Skipping DB fetch")
-        return
-
-    inputs_path = os.path.join(work_dir, "inputs.json")
-    with open(inputs_path) as f:
-        inputs = json.load(f)
-
+def _extent_from_inputs(inputs):
+    """Return ``(extent, resolution, easting, northing, radius)`` from inputs.json."""
     roost = inputs["roost"]
     params = inputs.get("params", {})
 
@@ -281,110 +357,8 @@ def fetch_resistance_inputs(work_dir: str):
     radius = roost["radius"]
     resolution = params.get("resolution", 10)
 
-    xmin = easting - radius
-    xmax = easting + radius
-    ymin = northing - radius
-    ymax = northing + radius
-
-    ncols = int((xmax - xmin) / resolution)
-    nrows = int((ymax - ymin) / resolution)
-    pixw = resolution
-
-    logger.info(
-        "Requested extent: xmin=%.2f ymin=%.2f xmax=%.2f ymax=%.2f "
-        "(roost=[%.2f,%.2f], radius=%.0f, resolution=%.0f → %dx%d)",
-        xmin, ymin, xmax, ymax,
-        easting, northing, radius, resolution, ncols, nrows,
-    )
-
-    conn = _connect(cfg)
-    ref_transform = None
-
-    try:
-        for name in ["dtm", "dsm", "lcm"]:
-            table = cfg.get(f"{name}_table", name)
-            logger.info("Fetching %s raster from %s...", name, table)
-            tiff_bytes = _fetch_raster_as_tiff(
-                conn, table, xmin, ymin, xmax, ymax, ncols, nrows
-            )
-
-            out_path = os.path.join(work_dir, f"{name}.tif")
-
-            if tiff_bytes is None:
-                logger.warning("%s returned no data, writing zeros", name)
-                arr = np.zeros((nrows, ncols), dtype=np.float32)
-                if ref_transform is None:
-                    ref_transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
-                with rasterio.open(
-                    out_path, "w", driver="GTiff", height=nrows, width=ncols,
-                    count=1, dtype=np.float32, crs="EPSG:27700",
-                    transform=ref_transform, nodata=-9999.0, compress="deflate",
-                ) as dst:
-                    dst.write(arr, 1)
-                logger.info(
-                    "Wrote %s.tif (%dx%d) — zeros (no data returned), bounds=[%.2f,%.2f,%.2f,%.2f]",
-                    name, ncols, nrows,
-                    ref_transform.c, ref_transform.f - nrows * abs(ref_transform.e),
-                    ref_transform.c + ncols * abs(ref_transform.a), ref_transform.f,
-                )
-            else:
-                with open(out_path, "wb") as f:
-                    f.write(tiff_bytes)
-
-                with rasterio.open(out_path) as src:
-                    logger.info(
-                        "Wrote %s.tif (%dx%d), bounds=[%.2f,%.2f,%.2f,%.2f], "
-                        "crs=%s, nodata=%s",
-                        name, src.width, src.height,
-                        src.bounds.left, src.bounds.bottom,
-                        src.bounds.right, src.bounds.top,
-                        src.crs, src.nodata,
-                    )
-                    if ref_transform is None and name == "dtm":
-                        ref_transform = src.transform
-
-        if ref_transform is None:
-            ref_transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
-
-        _write_tiff_sidecar(work_dir, ref_transform.c, ref_transform.f, abs(ref_transform.a), nrows, ncols)
-
-        for name in ["dsm", "lcm"]:
-            path = os.path.join(work_dir, f"{name}.tif")
-            if os.path.exists(path):
-                _resample_to_grid(path, ref_transform, ncols, nrows)
-
-        geojson_files = []
-        for table_key, out_name in [
-            ("roads_table", "roads"),
-            ("rivers_table", "rivers"),
-            ("buildings_table", "buildings"),
-        ]:
-            table = cfg.get(table_key)
-            if not table:
-                continue
-            logger.info("Fetching %s vectors from %s...", out_name, table)
-            gj = _fetch_vector_as_geojson(
-                conn, table, out_name, xmin, ymin, xmax, ymax
-            )
-            path = os.path.join(work_dir, f"{out_name}.geojson")
-            if gj is None:
-                gj = json.dumps({"type": "FeatureCollection", "features": []})
-            with open(path, "w") as f:
-                f.write(gj)
-            geojson_files.append(path)
-            logger.info("Wrote %s (%d bytes)", f"{out_name}.geojson", len(gj))
-
-        generic_path = os.path.join(work_dir, "generic_resistance.geojson")
-        with open(generic_path, "w") as f:
-            json.dump({"type": "FeatureCollection", "features": []}, f)
-        geojson_files.append(generic_path)
-
-        _merge_drawn_features(work_dir, geojson_files)
-
-    finally:
-        conn.close()
-
-    logger.info("Data fetch complete for %s", work_dir)
+    extent = (easting - radius, northing - radius, easting + radius, northing + radius)
+    return extent, resolution, easting, northing, radius
 
 
 def fetch_coverage_inputs(work_dir: str):
@@ -394,53 +368,24 @@ def fetch_coverage_inputs(work_dir: str):
         logger.warning("No ~/.bats.cfg found — skipping DB fetch")
         return
 
-    inputs_path = os.path.join(work_dir, "inputs.json")
-    with open(inputs_path) as f:
-        inputs = json.load(f)
-
-    roost = inputs["roost"]
-    params = inputs.get("params", {})
-
-    easting = roost["easting"]
-    northing = roost["northing"]
-    radius = roost["radius"]
-    resolution = params.get("resolution", 10)
-
-    xmin = easting - radius
-    xmax = easting + radius
-    ymin = northing - radius
-    ymax = northing + radius
-
-    ncols = int((xmax - xmin) / resolution)
-    nrows = int((ymax - ymin) / resolution)
+    inputs = _read_inputs(work_dir)
+    extent, resolution, easting, northing, radius = _extent_from_inputs(inputs)
+    xmin, ymin, xmax, ymax = extent
+    ncols, nrows, _ = target_square_grid(xmin, ymin, xmax, ymax, resolution)
 
     logger.info(
         "Coverage fetch: extent=[%.2f,%.2f,%.2f,%.2f] %dx%d, roost=[%.2f,%.2f], radius=%.0f",
         xmin, ymin, xmax, ymax, ncols, nrows, easting, northing, radius,
     )
 
+    rasters = [
+        ("dtm", cfg.get("dtm_table", "dtm")),
+        ("dsm", cfg.get("dsm_table", "dsm")),
+    ]
+
     conn = _connect(cfg)
     try:
-        for name in ["dtm", "dsm"]:
-            table = cfg.get(f"{name}_table", name)
-            logger.info("Fetching %s raster from %s...", name, table)
-            tiff_bytes = _fetch_raster_as_tiff(
-                conn, table, xmin, ymin, xmax, ymax, ncols, nrows
-            )
-            out_path = os.path.join(work_dir, f"{name}.tif")
-            if tiff_bytes is None:
-                logger.warning("%s returned no data, writing zeros", name)
-                arr = np.zeros((nrows, ncols), dtype=np.float32)
-                transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
-                with rasterio.open(
-                    out_path, "w", driver="GTiff", height=nrows, width=ncols,
-                    count=1, dtype=np.float32, crs="EPSG:27700",
-                    transform=transform, nodata=-9999.0,
-                ) as dst:
-                    dst.write(arr, 1)
-            else:
-                with open(out_path, "wb") as f:
-                    f.write(tiff_bytes)
+        fetch_raster_stack(conn, work_dir, rasters, extent, resolution)
     finally:
         conn.close()
 
@@ -450,148 +395,41 @@ def fetch_coverage_inputs(work_dir: str):
 def fetch_landscape_inputs(work_dir: str):
     """Fetch DTM/DSM/LCM rasters and building/road/river vectors for landscape computation.
 
-    Fetches coverage rasters and rasterizes vector features from PostGIS.
-    User-drawn features (from GPKG files) are merged on top of the DB-sourced data.
+    Rasters are resampled onto a common square grid; vectors are written as
+    GeoJSON with user-drawn features merged on top.
     """
     cfg = _get_db_config()
     if cfg is None:
         logger.warning("No ~/.bats.cfg found — skipping DB fetch")
         return
 
-    inputs_path = os.path.join(work_dir, "inputs.json")
-    with open(inputs_path) as f:
-        inputs = json.load(f)
-
-    roost = inputs["roost"]
-    params = inputs.get("params", {})
-
-    easting = roost["easting"]
-    northing = roost["northing"]
-    radius = roost["radius"]
-    resolution = params.get("resolution", 10)
-
-    xmin = easting - radius
-    xmax = easting + radius
-    ymin = northing - radius
-    ymax = northing + radius
-
-    ncols = int((xmax - xmin) / resolution)
-    nrows = int((ymax - ymin) / resolution)
-    pixw = resolution
+    inputs = _read_inputs(work_dir)
+    extent, resolution, easting, northing, radius = _extent_from_inputs(inputs)
+    xmin, ymin, xmax, ymax = extent
+    ncols, nrows, _ = target_square_grid(xmin, ymin, xmax, ymax, resolution)
 
     logger.info(
         "Landscape fetch: extent=[%.2f,%.2f,%.2f,%.2f] %dx%d, roost=[%.2f,%.2f], radius=%.0f",
         xmin, ymin, xmax, ymax, ncols, nrows, easting, northing, radius,
     )
 
+    rasters = [
+        ("dtm", cfg.get("dtm_table", "dtm")),
+        ("dsm", cfg.get("dsm_table", "dsm")),
+        ("lcm", cfg.get("lcm_table", "lcm")),
+    ]
+    vectors = [
+        ("buildings", cfg.get("buildings_table")),
+        ("generic_resistance", None),
+        ("roads", cfg.get("roads_table")),
+        ("rivers", cfg.get("rivers_table")),
+    ]
+
     conn = _connect(cfg)
-    ref_transform = None
-
     try:
-        for name in ["dtm", "dsm", "lcm"]:
-            table = cfg.get(f"{name}_table", name)
-            logger.info("Fetching %s raster from %s...", name, table)
-            tiff_bytes = _fetch_raster_as_tiff(
-                conn, table, xmin, ymin, xmax, ymax, ncols, nrows
-            )
-
-            out_path = os.path.join(work_dir, f"{name}.tif")
-
-            if tiff_bytes is None:
-                logger.warning("%s returned no data, writing zeros", name)
-                arr = np.zeros((nrows, ncols), dtype=np.float32)
-                if ref_transform is None:
-                    ref_transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
-                with rasterio.open(
-                    out_path, "w", driver="GTiff", height=nrows, width=ncols,
-                    count=1, dtype=np.float32, crs="EPSG:27700",
-                    transform=ref_transform, nodata=-9999.0, compress="deflate",
-                ) as dst:
-                    dst.write(arr, 1)
-                logger.info(
-                    "Wrote %s.tif (%dx%d) — zeros (no data returned), bounds=[%.2f,%.2f,%.2f,%.2f]",
-                    name, ncols, nrows,
-                    ref_transform.c, ref_transform.f - nrows * abs(ref_transform.e),
-                    ref_transform.c + ncols * abs(ref_transform.a), ref_transform.f,
-                )
-            else:
-                with open(out_path, "wb") as f:
-                    f.write(tiff_bytes)
-
-                with rasterio.open(out_path) as src:
-                    logger.info(
-                        "Wrote %s.tif (%dx%d), bounds=[%.2f,%.2f,%.2f,%.2f]",
-                        name, src.width, src.height,
-                        src.bounds.left, src.bounds.bottom,
-                        src.bounds.right, src.bounds.top,
-                    )
-                    if ref_transform is None and name == "dtm":
-                        ref_transform = src.transform
-
-        if ref_transform is None:
-            ref_transform = from_bounds(xmin, ymin, xmax, ymax, ncols, nrows)
-
-        for name in ["dsm", "lcm"]:
-            path = os.path.join(work_dir, f"{name}.tif")
-            if os.path.exists(path):
-                _resample_to_grid(path, ref_transform, ncols, nrows)
-
-        _write_tiff_sidecar(work_dir, ref_transform.c, ref_transform.f, abs(ref_transform.a), nrows, ncols)
-
-        buildings_table = cfg.get("buildings_table")
-        if buildings_table:
-            logger.info("Fetching building vectors from %s...", buildings_table)
-            gj = _fetch_vector_as_geojson(
-                conn, buildings_table, "buildings", xmin, ymin, xmax, ymax
-            )
-            if gj:
-                path = os.path.join(work_dir, "buildings.geojson")
-                with open(path, "w") as f:
-                    f.write(gj)
-                _merge_drawn_features(work_dir, [path])
-                logger.info("Wrote buildings.geojson (%d bytes)", len(gj))
-            else:
-                logger.warning("No building vectors found")
-
-        generic_path = os.path.join(work_dir, "generic_resistance.geojson")
-        with open(generic_path, "w") as f:
-            json.dump({"type": "FeatureCollection", "features": []}, f)
-        _merge_drawn_features(work_dir, [generic_path])
-
-        roads_table = cfg.get("roads_table")
-        roads_path = os.path.join(work_dir, "roads.geojson")
-        if roads_table:
-            logger.info("Fetching road vectors from %s...", roads_table)
-            gj = _fetch_vector_as_geojson(
-                conn, roads_table, "roads", xmin, ymin, xmax, ymax
-            )
-            if gj:
-                with open(roads_path, "w") as f:
-                    f.write(gj)
-                logger.info("Wrote roads.geojson (%d bytes)", len(gj))
-            else:
-                with open(roads_path, "w") as f:
-                    json.dump({"type": "FeatureCollection", "features": []}, f)
-                logger.warning("No road vectors found in %s", roads_table)
-        _merge_drawn_features(work_dir, [roads_path])
-
-        rivers_table = cfg.get("rivers_table")
-        rivers_path = os.path.join(work_dir, "rivers.geojson")
-        if rivers_table:
-            logger.info("Fetching river vectors from %s...", rivers_table)
-            gj = _fetch_vector_as_geojson(
-                conn, rivers_table, "rivers", xmin, ymin, xmax, ymax
-            )
-            if gj:
-                with open(rivers_path, "w") as f:
-                    f.write(gj)
-                logger.info("Wrote rivers.geojson (%d bytes)", len(gj))
-            else:
-                with open(rivers_path, "w") as f:
-                    json.dump({"type": "FeatureCollection", "features": []}, f)
-                logger.warning("No river vectors found in %s", rivers_table)
-        _merge_drawn_features(work_dir, [rivers_path])
-
+        transform, ncols, nrows = fetch_raster_stack(conn, work_dir, rasters, extent, resolution)
+        _write_tiff_sidecar(work_dir, transform, nrows, ncols)
+        fetch_vector_stack(conn, work_dir, vectors, extent)
     finally:
         conn.close()
 
