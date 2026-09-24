@@ -2,10 +2,6 @@
 
 Writes GeoTIFFs (rasters) and GeoJSON files (vectors) into the work directory
 for the wasm-connectivity resistance-pipeline binary to consume.
-
-The database queries live in :func:`query_raster_values` and
-:func:`query_vector_geojson`; everything downstream (grid construction,
-resampling, file writing) is DB-free and unit-testable.
 """
 
 import json
@@ -60,11 +56,6 @@ def _connect(cfg):
         user=cfg["user"],
         password=cfg["password"],
     )
-
-
-# ---------------------------------------------------------------------------
-# Database query functions
-# ---------------------------------------------------------------------------
 
 
 def query_raster_values(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
@@ -156,10 +147,6 @@ def query_vector_geojson(conn, table, layer_name, xmin, ymin, xmax, ymax):
         cur.close()
 
 
-# ---------------------------------------------------------------------------
-# Grid / raster helpers (no database)
-# ---------------------------------------------------------------------------
-
 
 def target_square_grid(xmin, ymin, xmax, ymax, resolution):
     """Build a square raster grid anchored on the requested extent.
@@ -219,9 +206,6 @@ def _write_tiff_sidecar(work_dir, transform, nrows, ncols):
         json.dump(info, f)
 
 
-# ---------------------------------------------------------------------------
-# Fetch orchestration
-# ---------------------------------------------------------------------------
 
 
 def fetch_raster_stack(conn, work_dir, rasters, extent, resolution):
