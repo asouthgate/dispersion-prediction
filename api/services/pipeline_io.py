@@ -4,6 +4,7 @@ import copy
 import fiona
 import json
 import logging
+import math
 import os
 from typing import Any
 
@@ -224,10 +225,17 @@ def collect_raster_info(work_dir: str) -> dict | None:
                 path = os.path.join(work_dir, fname)
                 import rasterio
                 with rasterio.open(path) as src:
+                    pixw = abs(src.transform.a)
+                    pixh = abs(src.transform.e)
+                    if not math.isclose(pixw, pixh, rel_tol=1e-6, abs_tol=1e-6):
+                        raise RuntimeError(
+                            f"Non-square raster grid in {fname}: "
+                            f"pixel width {pixw:.6f} != pixel height {pixh:.6f}"
+                        )
                     return {
                         "m": src.height,
                         "n": src.width,
-                        "pixw": abs(src.transform.a),
+                        "pixw": pixw,
                         "xmin": src.bounds.left,
                         "ymin": src.bounds.bottom,
                         "xmax": src.bounds.right,
