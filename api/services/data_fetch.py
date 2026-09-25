@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DB_NAME = "bats"
 CRS_BNG = "EPSG:27700"
-NODATA = -9999.0
 
 
 def _get_db_config():
@@ -84,6 +83,7 @@ def query_raster_values(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
                 )
                 SELECT
                     ST_DumpValues(rast, 1),
+                    ST_BandNoDataValue(rast, 1),
                     ST_XMin(ST_Envelope(rast)),
                     ST_YMin(ST_Envelope(rast)),
                     ST_XMax(ST_Envelope(rast)),
@@ -97,11 +97,13 @@ def query_raster_values(conn, table, xmin, ymin, xmax, ymax, ncols, nrows):
         if row is None or row[0] is None:
             return None
 
-        vals, rxmin, rymin, rxmax, rymax = row
+        vals, nodata, rxmin, rymin, rxmax, rymax = row
         if isinstance(vals, str):
             vals = json.loads(vals.replace("{", "[").replace("}", "]"))
 
         arr = np.array(vals, dtype=np.float32)
+        if nodata is not None:
+            arr[arr == nodata] = np.nan
         if arr.shape != (nrows, ncols):
             logger.warning(
                 "ST_DumpValues returned shape %s, expected (%d, %d)",
@@ -161,12 +163,12 @@ def target_square_grid(xmin, ymin, xmax, ymax, resolution):
     return ncols, nrows, transform
 
 
-def resample_to_grid(values, src_transform, dst_transform, dst_width, dst_height, nodata=NODATA):
+def resample_to_grid(values, src_transform, dst_transform, dst_width, dst_height, nodata=np.nan):
     """Reproject ``values`` from ``src_transform`` onto a target grid.
 
     ``values`` is a 2D float array on the source grid (in EPSG:27700). Cells of
     the target grid that fall outside the source footprint are filled with
-    ``nodata``.
+    ``nodata`` (NaN).
     """
     dst = np.full((dst_height, dst_width), nodata, dtype=np.float32)
     reproject(
@@ -183,8 +185,12 @@ def resample_to_grid(values, src_transform, dst_transform, dst_width, dst_height
     return dst
 
 
-def write_raster_tif(path, values, transform, crs=CRS_BNG, nodata=NODATA):
-    """Write a single-band float32 GeoTIFF."""
+def write_raster_tif(path, values, transform, crs=CRS_BNG, nodata=None):
+    """Write a single-band float32 GeoTIFF.
+
+    Missing cells are represented by NaN (no nodata tag), so downstream
+    consumers handle them natively as float NaNs.
+    """
     height, width = values.shape
     with rasterio.open(
         path, "w", driver="GTiff", height=height, width=width,
@@ -212,7 +218,7 @@ def fetch_raster_stack(conn, work_dir, rasters, extent, resolution):
     """Fetch ``rasters`` (list of ``(name, table)``) onto a common square grid.
 
     Each raster is resampled to the square grid anchored on the requested
-    extent (padding missing coverage with nodata), so all rasters share a single
+    extent (padding missing coverage with NaN), so all rasters share a single
     aligned grid. Writes ``work_dir/{name}.tif``.
 
     Returns ``(transform, ncols, nrows)`` of the square grid.
@@ -226,8 +232,8 @@ def fetch_raster_stack(conn, work_dir, rasters, extent, resolution):
 
         fetched = query_raster_values(conn, table, xmin, ymin, xmax, ymax, ncols, nrows)
         if fetched is None:
-            logger.warning("%s returned no data, writing zeros", name)
-            write_raster_tif(out_path, np.zeros((nrows, ncols), dtype=np.float32), transform)
+            logger.warning("%s returned no data, writing NaNs", name)
+            write_raster_tif(out_path, np.full((nrows, ncols), np.nan, dtype=np.float32), transform)
             continue
 
         values, envelope = fetched

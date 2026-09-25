@@ -121,7 +121,7 @@ def _run_coverage(
             "url": f"/api/rasters/{task.request.id}/raw/{layer_id}.tif",
             "bounds": list(extent_bng),
             "crs": "EPSG:27700",
-            "display": {"palette": "terrain", "scale": "linear", "label": name, "nodata": -9999.0},
+            "display": {"palette": "terrain", "scale": "linear", "label": name, "nodata": None},
         })
 
     dtm_tif = os.path.join(work_dir, "dtm.tif")
@@ -154,12 +154,9 @@ def _write_coverage_tif(dtm_tif: str, coverage_tif: str) -> None:
 
     with rasterio.open(dtm_tif) as src:
         data = src.read(1)
-        nodata = src.nodata
         profile = src.profile.copy()
 
     valid = np.isfinite(data)
-    if nodata is not None:
-        valid &= data != nodata
 
     profile.update(dtype="float32", count=1, nodata=0, compress="deflate")
     with rasterio.open(coverage_tif, "w", **profile) as dst:
@@ -282,7 +279,7 @@ def _apply_georeferencing(work_dir: str) -> None:
                 dtype=dtype,
                 crs="EPSG:27700",
                 transform=ref_transform,
-                nodata=-9999.0,
+                nodata=None,
             ) as dst:
                 dst.write(data, 1)
             os.replace(tmp_path, path)
@@ -448,8 +445,8 @@ def _display_for_layer(layer_id: str, name: str) -> dict[str, Any]:
         "scale": "linear",
         "label": name,
         "circularMask": is_current,
-        # log-transformed rasters turn their nodata into NaN; leave transparent.
-        "nodata": None if is_log else -9999.0,
+        # All rasters use NaN for missing data; leave those transparent.
+        "nodata": None,
     }
     if is_log:
         display["preTransformed"] = True
@@ -585,7 +582,8 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roo
         f.write(f"yllcorner     {ymin}\n")
         f.write(f"cellsize      {pixw}\n")
         f.write(f"NODATA_value  -9999\n")
-        np.savetxt(f, arr, fmt="%.6f", delimiter=" ")
+        asc_arr = np.where(np.isnan(arr), -9999.0, arr)
+        np.savetxt(f, asc_arr, fmt="%.6f", delimiter=" ")
 
     logger.info("Wrote browser-computed total resistance (%dx%d) to %s", m, n, asc_path)
 
