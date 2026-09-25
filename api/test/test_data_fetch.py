@@ -8,7 +8,6 @@ import rasterio
 from rasterio.transform import from_bounds
 
 from services.data_fetch import (
-    NODATA,
     fetch_raster_stack,
     resample_to_grid,
     target_square_grid,
@@ -41,8 +40,8 @@ def test_resample_to_grid_normalises_non_square_source():
     assert out.shape == (dst_nrows, dst_ncols)
     # Overlapping region keeps the source value.
     assert out[0, 0] == pytest.approx(1.0)
-    # Region south of the source coverage is nodata-padded, not garbage.
-    assert out[-1, -1] == pytest.approx(NODATA)
+    # Region south of the source coverage is NaN-padded, not garbage.
+    assert np.isnan(out[-1, -1])
 
 
 def test_fetch_raster_stack_writes_square_tif(tmp_path, monkeypatch):
@@ -75,4 +74,4 @@ def test_fetch_raster_stack_writes_square_tif(tmp_path, monkeypatch):
 
         data = src.read(1)
         assert data[0, 0] == pytest.approx(1.0)
-        assert data[-1, -1] == pytest.approx(NODATA)
+        assert np.isnan(data[-1, -1])

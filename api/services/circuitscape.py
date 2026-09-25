@@ -81,8 +81,12 @@ def asc_to_geotiff(asc_path: str, tif_path: str, log_transform: bool = False) ->
     """Convert a Circuitscape ASCII output to a GeoTIFF (EPSG:27700)."""
     with rasterio.open(asc_path) as src:
         data = src.read(1).astype(np.float32)
+        nodata = src.nodata
         transform = src.transform
         height, width = data.shape
+
+    if nodata is not None:
+        data = np.where(data == nodata, np.nan, data)
 
     if log_transform:
         data = np.log(data + 1.0)
@@ -90,6 +94,6 @@ def asc_to_geotiff(asc_path: str, tif_path: str, log_transform: bool = False) ->
     with rasterio.open(
         tif_path, "w", driver="GTiff", height=height, width=width, count=1,
         dtype="float32", crs="EPSG:27700", transform=transform,
-        compress="deflate",
+        compress="deflate", nodata=None,
     ) as dst:
         dst.write(data, 1)
