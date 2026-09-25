@@ -109,7 +109,7 @@ def write_input_files(
         roost_bng = {
             "easting": easting,
             "northing": northing,
-            "radius": roost.get("radiusMeters", roost.get("radius_meters", 2500)),
+            "radius": roost["radius_meters"],
         }
 
     # Classify features by category (skip browser-side categories)

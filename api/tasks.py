@@ -106,7 +106,7 @@ def _run_coverage(
     fetch_coverage_inputs(work_dir)
 
     easting, northing = wgs84_to_bng(roost["lng"], roost["lat"])
-    radius = roost.get("radiusMeters", roost.get("radius_meters", 2500))
+    radius = roost["radius_meters"]
     extent_bng = (easting - radius, northing - radius, easting + radius, northing + radius)
 
     layers = []
@@ -588,7 +588,7 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roo
     logger.info("Wrote browser-computed total resistance (%dx%d) to %s", m, n, asc_path)
 
     roost_e, roost_n = wgs84_to_bng(roost["lng"], roost["lat"])
-    radius = float(roost.get("radiusMeters", 2500.0))
+    radius = float(roost["radius_meters"])
 
     roost_col = int((roost_e - xmin) / pixw)
     roost_row = int((ymax - roost_n) / pixw)
@@ -640,7 +640,7 @@ def run_pipeline_task(
     resolution = params.get("resolution", 10)
     logger.info("Job %s: starting %s pipeline (resolution=%.0f, roost=%s, features=%d)",
                 self.request.id, stage, resolution,
-                f"({roost['lng']:.4f},{roost['lat']:.4f} r={roost.get('radiusMeters',2500)})" if roost else "none",
+                f"({roost['lng']:.4f},{roost['lat']:.4f} r={roost['radius_meters']})" if roost else "none",
                 len(features))
 
     def _progress(label: str) -> None:
