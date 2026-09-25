@@ -138,7 +138,7 @@ async def _start_pipeline(stage: str, req: PipelineRequest, token: str) -> Pipel
     params = dict(req.params)
     total_resistance = req.total_resistance.model_dump() if req.total_resistance else None
 
-    radius = roost.get("radiusMeters") or roost.get("radius_meters", 2500)
+    radius = roost["radius_meters"]
     resolution = params.get("resolution", 10)
     pixel_dim = (2 * radius) / resolution
     if pixel_dim > MAX_PIXEL_DIMENSION:
