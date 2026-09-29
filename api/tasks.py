@@ -539,11 +539,46 @@ def _cleanup_token_job(task_id: str) -> None:
     except Exception:
         pass
 
-def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roost: dict[str, Any]) -> None:
+def _source_circles_raster(
+    m: int,
+    n: int,
+    roost_row: int,
+    roost_col: int,
+    radius_meters: float,
+    pixw: float,
+    n_circles: int,
+) -> np.ndarray:
+    """Build the Circuitscape source raster as concentric rings.
+
+    Mirrors ``create_circles_raster`` in
+    ``frontend/wasm-connectivity/src/bin/resistance_pipeline.rs`` so the
+    server-written source.asc matches the fallback (Rust) path exactly.
+    Rings are spaced evenly from ``radius_meters / n_circles`` out to
+    ``radius_meters``; the roost centre itself is carried by ground.asc.
+    """
+    circles = np.zeros((m, n), dtype=np.float32)
+    radius_cells = radius_meters / pixw
+    lb = max(radius_cells / max(n_circles, 1), 1.0)
+
+    r = lb
+    while r <= radius_cells:
+        n_pts = max(int(3.0 * r), 10)
+        angles = 2.0 * np.pi * np.arange(n_pts) / n_pts
+        cols = roost_col + r * np.sin(angles)
+        rows = roost_row + r * np.cos(angles)
+        valid = (cols >= 0) & (cols < n) & (rows >= 0) & (rows < m)
+        circles[rows[valid].astype(np.int64), cols[valid].astype(np.int64)] = 1.0
+        r += lb
+
+    return circles
+
+
+def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roost: dict[str, Any], n_circles: int) -> None:
     """Decode browser-computed total resistance and write as GeoTIFF + ASC files.
 
-    Also writes ground.asc (roost point) and source.asc (roost disk) required
-    by Circuitscape, so the server does not fall back to server-side resistance.
+    Also writes ground.asc (roost point) and source.asc (concentric source
+    circles) required by Circuitscape, so the server does not fall back to
+    server-side resistance.
     """
 
     extent = total_res["extent"]
@@ -607,11 +642,7 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roo
         f.write(f"NODATA_value  -9999\n")
         np.savetxt(f, ground, fmt="%.0f", delimiter=" ")
 
-    ys = np.arange(m, dtype=np.float64) * pixw + ymin + pixw * 0.5
-    xs = np.arange(n, dtype=np.float64) * pixw + xmin + pixw * 0.5
-    xx, yy = np.meshgrid(xs, ys)
-    dist = np.sqrt((xx - roost_e) ** 2 + (yy - roost_n) ** 2)
-    source = np.where(dist <= radius, 1.0, 0.0).astype(np.float32)
+    source = _source_circles_raster(m, n, roost_row, roost_col, radius, pixw, n_circles)
 
     source_path = os.path.join(circuitscape_dir, "source.asc")
     with open(source_path, "w") as f:
@@ -623,7 +654,7 @@ def _write_total_resistance_raster(work_dir: str, total_res: dict[str, Any], roo
         f.write(f"NODATA_value  -9999\n")
         np.savetxt(f, source, fmt="%.0f", delimiter=" ")
 
-    logger.info("Wrote ground.asc (roost at %d,%d) and source.asc (radius=%.0fm)", roost_col, roost_row, radius)
+    logger.info("Wrote ground.asc (roost at %d,%d) and source.asc (radius=%.0fm, n_circles=%d)", roost_col, roost_row, radius, n_circles)
 
 @shared_task(bind=True, name="tasks.run_pipeline")
 def run_pipeline_task(
@@ -688,7 +719,8 @@ def run_pipeline_task(
                     raise ValueError("No roost defined: place a roost on the map before running the pipeline.")
                 if total_resistance:
                     _progress("Writing browser-computed total resistance...")
-                    _write_total_resistance_raster(work_dir, total_resistance, roost)
+                    n_circles = int(params.get("n_circles", 50))
+                    _write_total_resistance_raster(work_dir, total_resistance, roost, n_circles)
                 asc_path = os.path.join(work_dir, "circuitscape", "ground.asc")
                 if not os.path.exists(asc_path):
                     _progress("Computing resistance maps...")

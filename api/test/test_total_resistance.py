@@ -28,14 +28,13 @@ class TotalResistanceTests(unittest.TestCase):
         roost = {"lng": -3.589, "lat": 50.559, "radius_meters": 100.0}
         with tempfile.TemporaryDirectory() as work_dir:
             with self.assertRaises(ValueError):
-                _write_total_resistance_raster(work_dir, total_res, roost)
+                _write_total_resistance_raster(work_dir, total_res, roost, 50)
 
-    def test_source_disk_uses_radius_meters(self):
-        lng, lat = -3.589, 50.559
-        easting, northing = wgs84_to_bng(lng, lat)
-        radius = 100.0
-        pixw = 10.0
-        n = m = 41
+    def _write_and_load_source(self, work_dir, total_res, roost, n_circles):
+        _write_total_resistance_raster(work_dir, total_res, roost, n_circles)
+        return np.loadtxt(os.path.join(work_dir, "circuitscape", "source.asc"), skiprows=6)
+
+    def _total_res(self, easting, northing, radius=100.0, pixw=10.0, n=41, m=41):
         half = n * pixw / 2.0
         extent = {
             "m": m, "n": n, "pixw": pixw,
@@ -43,18 +42,47 @@ class TotalResistanceTests(unittest.TestCase):
             "xmax": easting + half, "ymax": northing + half,
         }
         arr = np.full((m, n), 1.0, dtype="<f4")
-        total_res = {
+        return {
             "extent": extent,
             "data_base64": base64.b64encode(arr.tobytes()).decode(),
         }
+
+    def test_source_is_rings_not_filled_disk(self):
+        lng, lat = -3.589, 50.559
+        easting, northing = wgs84_to_bng(lng, lat)
+        radius = 100.0
+        total_res = self._total_res(easting, northing, radius)
         roost = {"lng": lng, "lat": lat, "radius_meters": radius}
         with tempfile.TemporaryDirectory() as work_dir:
-            _write_total_resistance_raster(work_dir, total_res, roost)
-            src = np.loadtxt(os.path.join(work_dir, "circuitscape", "source.asc"), skiprows=6)
-            self.assertEqual(src.shape, (m, n))
-            self.assertEqual(src[20, 20], 1.0)
-            self.assertEqual(src[20, 15], 1.0)  # 50 m from centre
-            self.assertEqual(src[20, 5], 0.0)   # 150 m from centre, outside radius
+            src = self._write_and_load_source(work_dir, total_res, roost, n_circles=1)
+            self.assertEqual(src.shape, (41, 41))
+            self.assertEqual(src[20, 20], 0.0)  # centre is not a source
+            self.assertEqual(src[20, 5], 0.0)   # 150 m out, outside radius
+            self.assertGreater(int(src.sum()), 0)  # outer ring exists
+
+    def test_source_respects_radius_boundary(self):
+        lng, lat = -3.589, 50.559
+        easting, northing = wgs84_to_bng(lng, lat)
+        radius = 100.0
+        total_res = self._total_res(easting, northing, radius)
+        roost = {"lng": lng, "lat": lat, "radius_meters": radius}
+        with tempfile.TemporaryDirectory() as work_dir:
+            src = self._write_and_load_source(work_dir, total_res, roost, n_circles=5)
+            self.assertEqual(src[20, 20], 0.0)  # centre remains empty
+            self.assertEqual(src[20, 5], 0.0)   # 150 m out, outside radius
+
+    def test_more_circles_yield_more_source_cells(self):
+        lng, lat = -3.589, 50.559
+        easting, northing = wgs84_to_bng(lng, lat)
+        radius = 100.0
+        total_res = self._total_res(easting, northing, radius)
+        roost = {"lng": lng, "lat": lat, "radius_meters": radius}
+        counts = {}
+        with tempfile.TemporaryDirectory() as work_dir:
+            for n_circles in (1, 5):
+                src = self._write_and_load_source(work_dir, total_res, roost, n_circles=n_circles)
+                counts[n_circles] = int(src.sum())
+        self.assertGreater(counts[5], counts[1])
 
 
 class ValidDimTests(unittest.TestCase):
