@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 _CS_INI_TEMPLATE = """[Options for advanced mode]
 ground_file_is_resistances = True
 remove_src_or_gnd = keepall
+# Current is injected at the concentric rings (sources) and flows inward to
+# the roost, which is tied to ground as the sink.
 ground_file = WORKINGDIR/circuitscape/ground.asc
 use_unit_currents = False
 source_file = WORKINGDIR/circuitscape/source.asc
