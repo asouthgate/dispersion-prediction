@@ -163,12 +163,14 @@ def target_square_grid(xmin, ymin, xmax, ymax, resolution):
     return ncols, nrows, transform
 
 
-def resample_to_grid(values, src_transform, dst_transform, dst_width, dst_height, nodata=np.nan):
+def resample_to_grid(values, src_transform, dst_transform, dst_width, dst_height,
+                     nodata=np.nan, resampling=Resampling.bilinear):
     """Reproject ``values`` from ``src_transform`` onto a target grid.
 
     ``values`` is a 2D float array on the source grid (in EPSG:27700). Cells of
     the target grid that fall outside the source footprint are filled with
-    ``nodata`` (NaN).
+    ``nodata`` (NaN). ``resampling`` defaults to bilinear (continuous data);
+    pass ``Resampling.nearest`` for categorical rasters such as the LCM.
     """
     dst = np.full((dst_height, dst_width), nodata, dtype=np.float32)
     reproject(
@@ -178,7 +180,7 @@ def resample_to_grid(values, src_transform, dst_transform, dst_width, dst_height
         src_crs=CRS.from_string(CRS_BNG),
         dst_transform=dst_transform,
         dst_crs=CRS.from_string(CRS_BNG),
-        resampling=Resampling.bilinear,
+        resampling=resampling,
         src_nodata=nodata,
         dst_nodata=nodata,
     )
@@ -240,7 +242,12 @@ def fetch_raster_stack(conn, work_dir, rasters, extent, resolution):
         rxmin, rymin, rxmax, rymax = envelope
         src_transform = from_bounds(rxmin, rymin, rxmax, rymax, ncols, nrows)
         if src_transform != transform:
-            values = resample_to_grid(values, src_transform, transform, ncols, nrows)
+            # LCM is categorical (integer land-cover ranks); resample with
+            # nearest-neighbour to preserve class values (bilinear would smear
+            # them into fractional classes). DTM/DSM are continuous -> bilinear.
+            resampling = Resampling.nearest if name == "lcm" else Resampling.bilinear
+            values = resample_to_grid(values, src_transform, transform, ncols, nrows,
+                                      resampling=resampling)
 
         write_raster_tif(out_path, values, transform)
         logger.info("Wrote %s.tif (%dx%d) on square grid", name, ncols, nrows)

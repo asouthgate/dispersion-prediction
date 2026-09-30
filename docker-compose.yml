@@ -185,6 +185,7 @@ services:
     environment:
       FRONTEND_PORT: ${FRONTEND_PORT:?FRONTEND_PORT must be set}
       API_PORT: ${API_PORT:?API_PORT must be set}
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-64m}
     logging:
       driver: json-file
       options:
