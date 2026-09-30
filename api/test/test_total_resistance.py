@@ -30,9 +30,11 @@ class TotalResistanceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _write_total_resistance_raster(work_dir, total_res, roost, 50)
 
-    def _write_and_load_source(self, work_dir, total_res, roost, n_circles):
+    def _write_and_load(self, work_dir, total_res, roost, n_circles):
         _write_total_resistance_raster(work_dir, total_res, roost, n_circles)
-        return np.loadtxt(os.path.join(work_dir, "circuitscape", "source.asc"), skiprows=6)
+        source = np.loadtxt(os.path.join(work_dir, "circuitscape", "source.asc"), skiprows=6)
+        ground = np.loadtxt(os.path.join(work_dir, "circuitscape", "ground.asc"), skiprows=6)
+        return source, ground
 
     def _total_res(self, easting, northing, radius=100.0, pixw=10.0, n=41, m=41):
         half = n * pixw / 2.0
@@ -47,18 +49,30 @@ class TotalResistanceTests(unittest.TestCase):
             "data_base64": base64.b64encode(arr.tobytes()).decode(),
         }
 
-    def test_source_is_rings_not_filled_disk(self):
+    def test_source_is_rings_not_roost(self):
         lng, lat = -3.589, 50.559
         easting, northing = wgs84_to_bng(lng, lat)
         radius = 100.0
         total_res = self._total_res(easting, northing, radius)
         roost = {"lng": lng, "lat": lat, "radius_meters": radius}
         with tempfile.TemporaryDirectory() as work_dir:
-            src = self._write_and_load_source(work_dir, total_res, roost, n_circles=1)
-            self.assertEqual(src.shape, (41, 41))
-            self.assertEqual(src[20, 20], 0.0)  # centre is not a source
-            self.assertEqual(src[20, 5], 0.0)   # 150 m out, outside radius
-            self.assertGreater(int(src.sum()), 0)  # outer ring exists
+            source, _ = self._write_and_load(work_dir, total_res, roost, n_circles=1)
+            self.assertEqual(source.shape, (41, 41))
+            self.assertEqual(source[20, 20], -9999.0)  # centre is not a source
+            self.assertEqual(source[30, 20], 1.0)  # outer ring (100 m = 10 cells) is a source
+            self.assertEqual(source[20, 5], -9999.0)  # 150 m out, outside radius
+
+    def test_ground_is_roost_not_rings(self):
+        lng, lat = -3.589, 50.559
+        easting, northing = wgs84_to_bng(lng, lat)
+        radius = 100.0
+        total_res = self._total_res(easting, northing, radius)
+        roost = {"lng": lng, "lat": lat, "radius_meters": radius}
+        with tempfile.TemporaryDirectory() as work_dir:
+            _, ground = self._write_and_load(work_dir, total_res, roost, n_circles=1)
+            self.assertEqual(ground[20, 20], 1.0)  # roost is the ground
+            self.assertEqual(ground[20, 21], -9999.0)  # neighbours are NODATA
+            self.assertEqual(int(ground[ground == 1.0].size), 1)  # single ground cell
 
     def test_source_respects_radius_boundary(self):
         lng, lat = -3.589, 50.559
@@ -67,9 +81,9 @@ class TotalResistanceTests(unittest.TestCase):
         total_res = self._total_res(easting, northing, radius)
         roost = {"lng": lng, "lat": lat, "radius_meters": radius}
         with tempfile.TemporaryDirectory() as work_dir:
-            src = self._write_and_load_source(work_dir, total_res, roost, n_circles=5)
-            self.assertEqual(src[20, 20], 0.0)  # centre remains empty
-            self.assertEqual(src[20, 5], 0.0)   # 150 m out, outside radius
+            source, _ = self._write_and_load(work_dir, total_res, roost, n_circles=5)
+            self.assertEqual(source[20, 20], -9999.0)  # centre remains empty
+            self.assertEqual(source[20, 5], -9999.0)  # 150 m out, outside radius
 
     def test_more_circles_yield_more_source_cells(self):
         lng, lat = -3.589, 50.559
@@ -80,8 +94,8 @@ class TotalResistanceTests(unittest.TestCase):
         counts = {}
         with tempfile.TemporaryDirectory() as work_dir:
             for n_circles in (1, 5):
-                src = self._write_and_load_source(work_dir, total_res, roost, n_circles=n_circles)
-                counts[n_circles] = int(src.sum())
+                source, _ = self._write_and_load(work_dir, total_res, roost, n_circles=n_circles)
+                counts[n_circles] = int((source == 1.0).sum())
         self.assertGreater(counts[5], counts[1])
 
 
