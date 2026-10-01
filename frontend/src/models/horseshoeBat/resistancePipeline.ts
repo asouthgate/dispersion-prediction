@@ -1,6 +1,6 @@
 import type { DataFeature, ResultLayerEntry } from '@gsbio/engine';
 import { wgs84ToBng } from '../../utils/projections';
-import { plotRaster, encodeGeoTiff } from '@gsbio/engine';
+import { plotRaster, encodeGeoTiff, type RasterPlotSpec } from '@gsbio/engine';
 import { runPipelineBrowser, rasterizeGeojson, type ResistanceParams, type ResistanceResult } from '../../wasm/resistanceCompute';
 import { fetchRaster } from '../../wasm/geotiffFetch';
 import { fetchWithAuth } from '../../auth';
@@ -383,10 +383,10 @@ export async function buildResistanceResultLayers(
 
   const addLayer = async (id: string, name: string, data: Float32Array, scale: 'linear' | 'log' = 'linear') => {
     const masked = applyMask(data, coverageMask);
-    const plotted = await plotRaster(
-      { data: masked, width: n, height: m, crs: 'EPSG:27700', bounds: bngExtent },
-      { palette: 'magma', scale, label: name, colorbar: { side: 'right' } },
-    );
+    const grid = { data: masked, width: n, height: m, crs: 'EPSG:27700' as const, bounds: bngExtent };
+    const spec: RasterPlotSpec = { palette: 'magma', scale, label: name, colorbar: { side: 'right' } };
+    const plotted = await plotRaster(grid, spec);
+    const alphaPlotted = await plotRaster(grid, { ...spec, alphaRamp: true });
     const tif = new Uint8Array(
       encodeGeoTiff({ data: masked, width: n, height: m }, { bounds: bngExtent }),
     );
@@ -394,6 +394,7 @@ export async function buildResistanceResultLayers(
       id,
       name,
       envelope: { kind: 'image', url: plotted.url, bounds: plotted.boundsWgs84 },
+      envelopeMasked: { kind: 'image', url: alphaPlotted.url, bounds: alphaPlotted.boundsWgs84 },
       raw: { filename: `${id}.tif`, bytes: tif },
     });
   };

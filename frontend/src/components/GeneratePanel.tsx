@@ -3,6 +3,7 @@ import type { PipelineStage } from '../models/horseshoeBat';
 import { useModel, useRun, useResults, useEngine, useEngineState, computePixelDimensions, computeMinResolution, extractResultLayers, downloadLayerZip } from '@gsbio/engine';
 import type { RunLogEntry, DataFeature } from '@gsbio/engine';
 import { RunPanel, ResultsPanel } from '@gsbio/engine';
+import { Show, Hide } from 'react-coolicons';
 import { RunLogModal } from './RunLogModal';
 import { fetchBytes } from '../auth';
 
@@ -94,7 +95,11 @@ export function GeneratePanel() {
 
       <RunPanel />
       <hr className="generate-divider" />
-      <ResultsPanel onViewLog={handleViewLog} onDownload={handleDownload} />
+      <ResultsPanel
+        onViewLog={handleViewLog}
+        onDownload={handleDownload}
+        icons={{ show: <Show style={{ width: 14, height: 14 }} />, hide: <Hide style={{ width: 14, height: 14 }} /> }}
+      />
 
       <RunLogModal run={logRun} onClose={() => setLogRunId(null)} />
     </div>
