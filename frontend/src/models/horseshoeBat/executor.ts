@@ -112,14 +112,14 @@ async function plotServerLayers(ctx: SubmitContext, layers: ServerLayer[]): Prom
         label: (d.label as string) ?? l.name,
         colorbar: { side: 'right' },
       };
-      const out = await plotRaster(
-        { data: raster.data, width: raster.n, height: raster.m, crs: l.crs, bounds: l.bounds, nodata },
-        spec,
-      );
+      const grid = { data: raster.data, width: raster.n, height: raster.m, crs: l.crs, bounds: l.bounds, nodata };
+      const out = await plotRaster(grid, spec);
+      const masked = await plotRaster(grid, { ...spec, alphaRamp: true });
       return {
         id: l.id,
         name: l.name,
         envelope: { kind: 'image', url: out.url, bounds: out.boundsWgs84 },
+        envelopeMasked: { kind: 'image', url: masked.url, bounds: masked.boundsWgs84 },
         raw: { filename: `${l.id}.tif`, url: l.url },
       };
     }),

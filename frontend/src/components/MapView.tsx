@@ -57,11 +57,11 @@ const MAP_PALETTE: MapPalette = {
 
 const iconStyle = { width: 18, height: 18 };
 
-type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string; options?: Record<string, unknown> };
+type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string; options?: Record<string, unknown>; fillOpacity?: number };
 
 const TOOLS: ToolDef[] = [
   { mode: 'select', label: 'Select', icon: <Move style={iconStyle} />, color: '#888' },
-  { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def', options: { maxRadiusMeters: 5000 } },
+  { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def', options: { maxRadiusMeters: 5000 }, fillOpacity: 0 },
   { mode: 'polygon', label: 'Building', icon: <Building04 style={iconStyle} />, color: '#a0522d' },
   { mode: 'linestring', label: 'Road', icon: <CarAuto style={iconStyle} />, color: '#888888' },
   { mode: 'linestring', label: 'River', icon: <WaterDrop style={iconStyle} />, color: '#3678b5' },
@@ -77,7 +77,7 @@ const Feature_OPACITY = 0.2;
 const featureStyles: FeatureStyleConfig = {
   tools: [
     ...TOOLS.map((t) => {
-      const base = { fillColor: t.color, fillOpacity: Feature_OPACITY, outlineColor: t.color, outlineWidth: 2 };
+      const base = { fillColor: t.color, fillOpacity: t.fillOpacity ?? Feature_OPACITY, outlineColor: t.color, outlineWidth: 2 };
       switch (t.mode) {
         case 'point':
           return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 7 } };
