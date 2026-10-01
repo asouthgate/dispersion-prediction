@@ -434,8 +434,6 @@ def _display_for_layer(layer_id: str, name: str) -> dict[str, Any]:
     is_current = "current" in layer_id
     if layer_id in ("dtm", "dsm"):
         palette = "terrain"
-    elif is_current:
-        palette = "plasma"
     else:
         palette = "magma"
 
