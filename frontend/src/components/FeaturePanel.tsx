@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { ReactNode } from 'react';
-import { useFeatures, useEngine, FeaturePanel as FeatureInspector, readGpkgFeatureTables, writeGpkg } from '@gsbio/engine';
+import { useFeatures, useEngine, FeaturePanel as FeatureInspector, readGpkgFeatureTables, writeGpkg, decodeGpkgFeature } from '@gsbio/engine';
 import type { DataFeature, DataFieldDef, GpkgTable } from '@gsbio/engine';
 import { Building04, CarAuto, WaterDrop, Sun, Move, Show, Hide, TrashFull, FileUpload, DownloadPackage, Triangle } from 'react-coolicons';
 import { configureGeopackageWasm } from '../utils/geopackage';
@@ -17,63 +17,17 @@ const categoryIconMap: Record<string, ReactNode> = {
   GenericResistance: <Triangle style={categoryIconStyle} />,
 };
 
-const CATEGORY_SYNONYMS: Record<string, string> = {
-  building: 'Building',
-  buildings: 'Building',
-  buildingfootprints: 'Building',
-  road: 'Road',
-  roads: 'Road',
-  river: 'River',
-  rivers: 'River',
-  water: 'River',
-  waterways: 'River',
-  light: 'Lights',
-  lights: 'Lights',
-  streetlight: 'Lights',
-  streetlights: 'Lights',
-  lamp: 'Lights',
-  lamps: 'Lights',
-  lightsequence: 'LightSequence',
-  lightsequences: 'LightSequence',
-  genericresistance: 'GenericResistance',
-  roost: 'Roost',
-};
-
-function categoryFromTableName(name: string): string {
-  const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return CATEGORY_SYNONYMS[key] ?? 'Unknown';
-}
-
-function geometryKindOf(type: string): DataFeature['geometryKind'] {
-  if (type === 'LineString' || type === 'MultiLineString') return 'linestring';
-  if (type === 'Polygon' || type === 'MultiPolygon') return 'polygon';
-  if (type === 'MultiPoint') return 'multipoint';
-  return 'point';
-}
-
-/** GPKG stores nested metadata as JSON strings; decode when necessary. */
-function decodeMeta(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-function dataFeatureFromGeoJson(gj: GeoJSON.Feature, fallbackCategory: string): DataFeature {
-  const props = (gj.properties ?? {}) as Record<string, unknown>;
-  const data = decodeMeta(props._dp_data);
-  const circle = decodeMeta(props._dp_circle);
+function dataFeatureFromGeoJson(gj: GeoJSON.Feature): DataFeature {
+  const meta = decodeGpkgFeature(gj);
   return {
     id: crypto.randomUUID(),
-    geometryKind: geometryKindOf(gj.geometry.type),
-    category: (typeof props._dp_category === 'string' ? props._dp_category : fallbackCategory) || 'Unknown',
-    label: typeof props._dp_label === 'string' ? props._dp_label : '',
+    geometryKind: meta.geometryKind,
+    category: meta.category ?? 'Unknown',
+    label: meta.label ?? '',
     visible: true,
-    geojson: { ...gj, properties: {} },
-    circle: circle as DataFeature['circle'],
-    data: data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined,
+    geojson: meta.geojson,
+    circle: meta.circle,
+    data: meta.data,
   };
 }
 
@@ -196,7 +150,7 @@ export function FeaturePanel() {
         let added = 0;
         for (const table of tables) {
           for (const gj of table.features) {
-            engine.addFeature(dataFeatureFromGeoJson(gj, categoryFromTableName(table.name)));
+            engine.addFeature(dataFeatureFromGeoJson(gj));
             added++;
           }
         }
@@ -218,7 +172,7 @@ export function FeaturePanel() {
           return;
         }
         for (const gj of data.features as GeoJSON.Feature[]) {
-          engine.addFeature(dataFeatureFromGeoJson(gj, 'Unknown'));
+          engine.addFeature(dataFeatureFromGeoJson(gj));
         }
       } catch {
         alert('Failed to parse GeoJSON file.');
