@@ -181,8 +181,7 @@ def _run_current(
         if callable(is_cancelled) and is_cancelled():
             logger.info("Circuitscape was cancelled (rc=%d)", returncode)
             return [], []
-        stderr_tail = (stderr or "")[-500:] or "(no output)"
-        logger.error("Circuitscape failed (rc=%d): %s", returncode, stderr_tail)
+        logger.error("Circuitscape failed (rc=%d):\n%s", returncode, (stderr or "(no output)").strip())
         raise RuntimeError(f"Circuitscape failed (rc={returncode})")
 
     curmap_path = os.path.join(work_dir, "circuitscape", "cs_out_curmap.asc")
@@ -507,9 +506,8 @@ def _run_resistance_pipeline(
         if callable(is_cancelled) and is_cancelled():
             logger.info("Pipeline was cancelled (rc=%d), not treating as error", returncode)
             return [], warnings
-        stderr_tail = (stderr or "")[-500:] or "(no output)"
-        logger.error("Pipeline failed (rc=%d): %s", returncode, stderr_tail)
-        raise RuntimeError(f"Pipeline failed (rc={returncode}): {stderr_tail[:300]}")
+        logger.error("Pipeline failed (rc=%d):\n%s", returncode, (stderr or "(no output)").strip())
+        raise RuntimeError(f"Pipeline failed (rc={returncode})")
 
     if use_binary:
         lcm_path = os.path.join(work_dir, "lcm.tif")
@@ -761,6 +759,7 @@ def run_pipeline_task(
             emit_pipeline_complete(stage, time.monotonic() - t0, False)
             friendly = _sanitize_error(str(e))
             logger.error("Job %s failed: %s", self.request.id, friendly)
+            logger.exception("Job %s raw error", self.request.id)
             raise RuntimeError(friendly) from e
     finally:
         _cleanup_token_job(self.request.id)
