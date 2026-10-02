@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useEngine, useFeatures, decodeGeoTiff, plotRaster, type FileSourceDef, type DataFeature, type DecodedRaster } from '@gsbio/engine';
 import { AgreementModal } from './AgreementModal';
 import { parseLightsCsv } from '../utils/parseLightsCsv';
+import { configureGeopackageWasm } from '../utils/geopackage';
 import { LIGHTMAP_CATEGORY, LIGHTMAP_LABEL, lightMapFootprint } from '../models/horseshoeBat/lightMap';
 
 const LIGHTS_SOURCE: FileSourceDef = {
@@ -12,6 +13,10 @@ const LIGHTS_SOURCE: FileSourceDef = {
 
 function isCsvFile(name: string, text: string): boolean {
   return /\.csv$/i.test(name) || !text.trimStart().startsWith('{');
+}
+
+function isGpkgFile(name: string): boolean {
+  return /\.gpkg$/i.test(name);
 }
 
 function countPoints(features: { geometryKind: string; geojson: GeoJSON.Feature }[]): number {
@@ -36,10 +41,28 @@ export function LightUpload() {
   const lightMapFeature = featureState.features.find((f) => f.category === LIGHTMAP_CATEGORY);
   const lightMap = lightMapFeature?.data?.raster as DecodedRaster | null | undefined;
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setWarning('');
+    setLoaded(0);
+
+    if (isGpkgFile(file.name)) {
+      await configureGeopackageWasm();
+      try {
+        const buffer = await file.arrayBuffer();
+        const features = await engine.addGpkgSource(LIGHTS_SOURCE, buffer);
+        const total = countPoints(features);
+        if (total === 0) {
+          setWarning('No valid features found in GeoPackage file.');
+          return;
+        }
+        setLoaded(total);
+      } catch (err) {
+        setWarning(err instanceof Error ? err.message : 'Failed to read GeoPackage file.');
+      }
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -117,8 +140,8 @@ export function LightUpload() {
 
   return (
     <div className="csv-upload">
-      <p className="hint">Import a GeoJSON file with Point features (WGS84), or a CSV with lat/lng or easting/northing columns plus a height column (height or z).</p>
-      <input type="file" accept=".geojson,.json,.csv" onChange={handleFile} />
+      <p className="hint">Import a GeoJSON file with Point features (WGS84), a GeoPackage (.gpkg), or a CSV with lat/lng or easting/northing columns plus a height column (height or z).</p>
+      <input type="file" accept=".geojson,.json,.csv,.gpkg" onChange={handleFile} />
       {loaded > 0 && (
         <p className="hint">Loaded {loaded} lamps</p>
       )}
