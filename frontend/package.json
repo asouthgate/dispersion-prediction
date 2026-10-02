@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@gsbio/engine": "file:./gsbio-engine",
+    "@ngageoint/geopackage": "^4.2.9",
     "@turf/circle": "^7.3.5",
     "@turf/helpers": "^7.3.5",
     "geotiff": "^2.1.3",

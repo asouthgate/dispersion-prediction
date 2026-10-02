@@ -129,11 +129,11 @@ def query_vector_geojson(conn, table, layer_name, xmin, ymin, xmax, ymax):
                 """
                 SELECT jsonb_build_object(
                     'type', 'FeatureCollection',
-                    'features', jsonb_agg(jsonb_build_object(
+                    'features', COALESCE(jsonb_agg(jsonb_build_object(
                         'type', 'Feature',
                         'geometry', ST_AsGeoJSON(geom)::jsonb,
                         'properties', jsonb_build_object('layer', %s)
-                    ))
+                    )), '[]'::jsonb)
                 )
                 FROM {}
                 WHERE ST_Intersects(geom, ST_MakeEnvelope(%s, %s, %s, %s, 27700))
@@ -323,11 +323,13 @@ def _merge_drawn_features(work_dir):
         if os.path.exists(geojson_path):
             try:
                 with open(geojson_path) as f:
-                    existing = json.load(f)
+                    loaded = json.load(f)
+                if isinstance(loaded, dict) and isinstance(loaded.get("features"), list):
+                    existing = loaded
             except (json.JSONDecodeError, OSError):
                 pass
 
-        existing["features"].extend(features)
+        existing.setdefault("features", []).extend(features)
         with open(geojson_path, "w") as f:
             json.dump(existing, f)
 

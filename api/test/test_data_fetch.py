@@ -1,13 +1,16 @@
 """Tests for raster fetching and square-grid normalisation."""
 
+import json
 import os
 
+import fiona
 import numpy as np
 import pytest
 import rasterio
 from rasterio.transform import from_bounds
 
 from services.data_fetch import (
+    _merge_drawn_features,
     fetch_raster_stack,
     resample_to_grid,
     target_square_grid,
@@ -42,6 +45,34 @@ def test_resample_to_grid_normalises_non_square_source():
     assert out[0, 0] == pytest.approx(1.0)
     # Region south of the source coverage is NaN-padded, not garbage.
     assert np.isnan(out[-1, -1])
+
+
+def test_merge_drawn_features_handles_null_features(tmp_path):
+    # A DB-produced buildings.geojson may contain `features: null` when the
+    # vector table is empty for the extent (jsonb_agg over zero rows). Merging
+    # drawn features must not crash on it.
+    geojson_path = tmp_path / "buildings.geojson"
+    geojson_path.write_text(json.dumps({"type": "FeatureCollection", "features": None}))
+
+    gpkg_path = tmp_path / "drawn_building.gpkg"
+    schema = {"geometry": "Polygon", "properties": {"height": "float"}}
+    with fiona.open(
+        gpkg_path, "w", driver="GPKG", schema=schema, crs="EPSG:27700", layer="building",
+    ) as dst:
+        dst.write({
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+            },
+            "properties": {"height": 5.0},
+        })
+
+    _merge_drawn_features(str(tmp_path))
+
+    merged = json.loads(geojson_path.read_text())
+    assert isinstance(merged["features"], list)
+    assert len(merged["features"]) == 1
+    assert merged["features"][0]["properties"]["layer"] == "buildings"
 
 
 def test_fetch_raster_stack_writes_square_tif(tmp_path, monkeypatch):
