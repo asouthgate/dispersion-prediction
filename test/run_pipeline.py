@@ -45,8 +45,8 @@ def auth_header(base: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 TEST_ROOST = {
-    "lng": -3.590523,
-    "lat": 50.586362,
+    "lng": -3.60044,
+    "lat": 50.60303,
     "radiusMeters": 500,
 }
 TEST_LIGHT_FEATURES = [

@@ -4,6 +4,10 @@ set -e
 API_URL="${API_URL:-http://localhost:${API_PORT:-8084}}"
 OUTPUT_DIR="tmp/api-output"
 
+# Surface the real pipeline error (the API returns a sanitised message) by
+# dumping the worker/API logs on any failing step before the script exits.
+trap 'echo "=== celery/api logs (on failure) ==="; docker compose logs celery_worker api --tail 300 || true' ERR
+
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
