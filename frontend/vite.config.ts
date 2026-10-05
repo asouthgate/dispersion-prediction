@@ -1,15 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import wasm from 'vite-plugin-wasm';
-import topLevelAwait from 'vite-plugin-top-level-await';
 import { fileURLToPath } from 'node:url';
 
 const nodeShim = fileURLToPath(new URL('./src/shims/node-empty.ts', import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), wasm(), topLevelAwait()],
+  plugins: [react(), wasm()],
+  build: { target: 'esnext' },
   worker: {
-    plugins: () => [wasm(), topLevelAwait()],
+    plugins: () => [wasm()],
     format: 'es',
   },
   resolve: {
@@ -21,6 +21,7 @@ export default defineConfig({
       path: nodeShim,
       crypto: nodeShim,
     },
+    dedupe: ['react', 'react-dom']
   },
   server: {
     port: 5184,

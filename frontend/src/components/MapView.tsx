@@ -226,7 +226,7 @@ export function MapView() {
       resultStyles,
       getToken: () => acquireToken(),
       refreshToken: () => { clearToken(); return acquireToken().catch(() => null); },
-      transformRequest: (url) => {
+      transformRequest: (url: string) => {
         const pathname = url.startsWith('http') ? new URL(url).pathname : url.split('?')[0];
         if (pathname.startsWith('/api/')) {
           const token = getStoredToken();
