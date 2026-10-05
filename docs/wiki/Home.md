@@ -10,7 +10,7 @@ functionality like connectivity analysis and roost localisation from call data.
 ## Contents
 
 - [[Quick Start]]
-- [[Sessions]]
+- [[Sessions And Your Data]]
 - [[Data]]
 - [[Features]]
 - [[Parameters]]
