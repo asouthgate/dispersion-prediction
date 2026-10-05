@@ -134,7 +134,7 @@ export function FeaturePanel() {
       features: gjs,
     }));
     const bytes = await writeGpkg(tables);
-    const blob = new Blob([bytes], { type: 'application/geopackage+sqlite3' });
+    const blob = new Blob([Uint8Array.from(bytes)], { type: 'application/geopackage+sqlite3' });
     downloadBlob(blob, 'features.gpkg');
   };
 
