@@ -28,6 +28,18 @@ describe('parseLightsCsv', () => {
     expect(() => parseLightsCsv('x,y,z\n1,2,3')).toThrow(/lat\/lng|easting\/northing/);
   });
 
+  it('accepts plural and mixed-case easting/northing/height headers', () => {
+    const easting = 300500;
+    const northing = 60500;
+    const [lng, lat] = bngToWgs84LngLat(easting, northing);
+    const csv = `Eastings,Northings,HEIGHT\n${easting},${northing},9`;
+    const { geojson } = parseLightsCsv(csv);
+    const g = geojson.features[0]!.geometry as GeoJSON.MultiPoint;
+    expect(g.coordinates[0]![0]).toBeCloseTo(lng, 9);
+    expect(g.coordinates[0]![1]).toBeCloseTo(lat, 9);
+    expect(geojson.features[0]!.properties!.heights).toEqual([9]);
+  });
+
   it('handles quoted fields and CRLF line endings', () => {
     const csv = '"lat","lng","height"\r\n"50.604","-3.59","10"\r\n';
     const { count } = parseLightsCsv(csv);
