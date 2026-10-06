@@ -74,7 +74,7 @@ export function RoostFinderImport() {
     <div className="panel-section">
       <p className="hint">
         Import detector and call data CSVs. Coordinates are British National Grid.
-        Required columns must match the roost-finder contract (unrecognised columns
+        Required columns must match the roost-finder convention (unrecognised columns
         are ignored).
       </p>
       <FileField

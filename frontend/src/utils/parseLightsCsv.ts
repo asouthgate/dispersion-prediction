@@ -8,8 +8,8 @@ export interface ParsedLights {
 
 const LAT_ALIASES = new Set(['lat', 'latitude']);
 const LNG_ALIASES = new Set(['lng', 'lon', 'long', 'longitude']);
-const EASTING_ALIASES = new Set(['easting']);
-const NORTHING_ALIASES = new Set(['northing']);
+const EASTING_ALIASES = new Set(['easting', 'eastings']);
+const NORTHING_ALIASES = new Set(['northing', 'northings']);
 const HEIGHT_ALIASES = new Set(['height', 'z']);
 
 /** Heights above this (metres) are treated as likely-misplaced coordinates. */
