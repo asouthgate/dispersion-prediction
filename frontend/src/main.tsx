@@ -11,11 +11,9 @@ import './styles/index.css';
 
 export function AppRoot() {
   const [activeTab, setActiveTab] = useState<PanelTab>('connectivity');
-  // const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     acquireToken().then(t => {
-      // setToken(t);
       trackPageview(t);
     }).catch(console.error);
   }, []);
@@ -30,13 +28,12 @@ export function AppRoot() {
 
   useEffect(() => {
     if (activeTab === 'roost') {
+      // TODO: fix this, it's inconsistent
       engine.setModel(ROOST_FINDER_MODEL_ID);
     } else {
       engine.setModel(horseshoeBatModel.id);
     }
   }, [activeTab, engine]);
-
-  // if (!token) return null;
 
   return (
     <EngineProvider engine={engine}>
