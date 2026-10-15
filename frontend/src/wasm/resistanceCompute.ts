@@ -10,13 +10,6 @@ function f32ToF64(arr: Float32Array): Float64Array {
   return out;
 }
 
-function base64ToF32Array(b64: string): Float32Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Float32Array(bytes.buffer);
-}
-
 function jsonArrayToF32Array(values: unknown): Float32Array {
   const arr = values as number[];
   const out = new Float32Array(arr.length);
@@ -104,39 +97,32 @@ export async function runPipelineBrowser(
   params: ResistanceParams,
   lightmap?: Float32Array,
 ): Promise<ResistanceResult> {
-  const args: Float64Array[] = [
-    roadBinary, riverBinary, buildingMask, dtm, dsm, genericResistance, lamps, landscapeConductance,
-  ].map(f32ToF64);
+  try {
+    const paramsJson = JSON.stringify(params);
+    const result = lightmap
+      ? await runResistancePipelineBrowserWithLightmapAsync(
+          roadBinary, riverBinary, buildingMask, dtm, dsm, genericResistance, lightmap,
+          landscapeConductance, paramsJson,
+        )
+      : await runResistancePipelineBrowserAsync(
+          roadBinary, riverBinary, buildingMask, dtm, dsm, genericResistance, lamps,
+          landscapeConductance, paramsJson,
+        );
 
-  const paramsJson = JSON.stringify(params);
-
-  const json = lightmap
-    ? await runResistancePipelineBrowserWithLightmapAsync(
-        args[0], args[1], args[2], args[3], args[4], args[5], f32ToF64(lightmap), args[7],
-        paramsJson,
-      )
-    : await runResistancePipelineBrowserAsync(
-        args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
-        paramsJson,
-      );
-
-  const parsed = JSON.parse(json);
-
-  if (parsed.error) {
-    throw new Error(`Resistance pipeline error: ${parsed.error}`);
+    return {
+      totalRes: result.total_res,
+      lampRes: result.lamp_res,
+      roadRes: result.road_res,
+      riverRes: result.river_res,
+      landscapeRes: result.landscape_res,
+      linearRes: result.linear_res,
+      genericRes: result.generic_res,
+      softSurf: result.soft_surf,
+      hardSurf: result.hard_surf,
+      nrows: result.nrows,
+      ncols: result.ncols,
+    };
+  } catch (error) {
+    throw new Error(`Resistance pipeline error: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  return {
-    totalRes:     base64ToF32Array(parsed.total_res),
-    lampRes:      base64ToF32Array(parsed.lamp_res),
-    roadRes:      base64ToF32Array(parsed.road_res),
-    riverRes:     base64ToF32Array(parsed.river_res),
-    landscapeRes: base64ToF32Array(parsed.landscape_res),
-    linearRes:    base64ToF32Array(parsed.linear_res),
-    genericRes:   base64ToF32Array(parsed.generic_res),
-    softSurf:     base64ToF32Array(parsed.soft_surf),
-    hardSurf:     base64ToF32Array(parsed.hard_surf),
-    nrows:        parsed.nrows,
-    ncols:        parsed.ncols,
-  };
 }

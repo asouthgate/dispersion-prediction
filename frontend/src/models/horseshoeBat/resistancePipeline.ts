@@ -399,19 +399,17 @@ export async function buildResistanceResultLayers(
     });
   };
 
-  await Promise.all([
-    addLayer('road_res', 'Road Resistance', result.roadRes),
-    addLayer('river_res', 'River Resistance', result.riverRes),
-    addLayer('linear_res', 'Linear Resistance', result.linearRes),
-    addLayer('lamp_res', 'Lamp Resistance', result.lampRes),
-    addLayer('log_lamp_res', 'Log Lamp Resistance', result.lampRes, 'log'),
-    addLayer('generic_res', 'Generic Resistance', result.genericRes),
-    addLayer('soft_surf', 'Soft Surface', result.softSurf),
-    addLayer('hard_surf', 'Hard Surface', result.hardSurf),
-    addLayer('total_res', 'Total Resistance', result.totalRes),
-    addLayer('landscape_res', 'Landscape Resistance', result.landscapeRes),
-    addLayer('log_total_res', 'Log Total Resistance', result.totalRes, 'log'),
-  ]);
+  await addLayer('road_res', 'Road Resistance', result.roadRes);
+  await addLayer('river_res', 'River Resistance', result.riverRes);
+  await addLayer('linear_res', 'Linear Resistance', result.linearRes);
+  await addLayer('lamp_res', 'Lamp Resistance', result.lampRes);
+  await addLayer('log_lamp_res', 'Log Lamp Resistance', result.lampRes, 'log');
+  await addLayer('generic_res', 'Generic Resistance', result.genericRes);
+  await addLayer('soft_surf', 'Soft Surface', result.softSurf);
+  await addLayer('hard_surf', 'Hard Surface', result.hardSurf);
+  await addLayer('total_res', 'Total Resistance', result.totalRes);
+  await addLayer('landscape_res', 'Landscape Resistance', result.landscapeRes);
+  await addLayer('log_total_res', 'Log Total Resistance', result.totalRes, 'log');
 
   return layers;
 }

@@ -1,10 +1,12 @@
-FROM postgis/postgis:16-3.5
+FROM postgres:16-bookworm
 
 # `postgis` (the metapackage) provides shp2pgsql/raster2pgsql, which the seed
-# script needs. bullseye is EOL so its security repo's InRelease is expired;
-# Check-Valid-Until=false lets apt-get update proceed anyway.
-RUN apt-get update -o Acquire::Check-Valid-Until=false \
-    && apt-get install -y --no-install-recommends postgis \
+# script needs.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        postgresql-16-postgis-3 \
+        postgresql-16-postgis-3-scripts \
+        postgis \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY test/data/seed/seed-test-data.sh /docker-entrypoint-initdb.d/00-seed.sh
