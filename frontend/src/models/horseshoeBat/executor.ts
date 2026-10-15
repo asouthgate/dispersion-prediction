@@ -95,35 +95,35 @@ async function plotServerLayers(ctx: SubmitContext, layers: ServerLayer[]): Prom
   if (serverLayers.length > 0) {
     ctx.onLog?.('info', `Plotting ${serverLayers.length} raster layer(s) in your browser…`);
   }
-  return Promise.all(
-    serverLayers.map(async (l): Promise<ResultLayerEntry> => {
-      const d = l.display ?? {};
-      const raster = await fetchRaster(l.url);
-      const nodata = typeof d.nodata === 'number' ? (d.nodata as number) : undefined;
-      const spec: RasterPlotSpec = {
-        palette: (d.palette as RasterPlotSpec['palette']) ?? 'magma',
-        scale: d.scale as RasterPlotSpec['scale'],
-        preTransformed: d.preTransformed as boolean | undefined,
-        transform: d.transform as RasterPlotSpec['transform'],
-        vmin: d.vmin as number | undefined,
-        vmax: d.vmax as number | undefined,
-        invert: d.invert as boolean | undefined,
-        circularMask: d.circularMask as boolean | undefined,
-        label: (d.label as string) ?? l.name,
-        colorbar: { side: 'right' },
-      };
-      const grid = { data: raster.data, width: raster.n, height: raster.m, crs: l.crs, bounds: l.bounds, nodata };
-      const out = await plotRaster(grid, spec);
-      const masked = await plotRaster(grid, { ...spec, alphaRamp: true });
-      return {
-        id: l.id,
-        name: l.name,
-        envelope: { kind: 'image', url: out.url, bounds: out.boundsWgs84 },
-        envelopeMasked: { kind: 'image', url: masked.url, bounds: masked.boundsWgs84 },
-        raw: { filename: `${l.id}.tif`, url: l.url },
-      };
-    }),
-  );
+  const results: ResultLayerEntry[] = [];
+  for (const l of serverLayers) {
+    const d = l.display ?? {};
+    const raster = await fetchRaster(l.url);
+    const nodata = typeof d.nodata === 'number' ? (d.nodata as number) : undefined;
+    const spec: RasterPlotSpec = {
+      palette: (d.palette as RasterPlotSpec['palette']) ?? 'magma',
+      scale: d.scale as RasterPlotSpec['scale'],
+      preTransformed: d.preTransformed as boolean | undefined,
+      transform: d.transform as RasterPlotSpec['transform'],
+      vmin: d.vmin as number | undefined,
+      vmax: d.vmax as number | undefined,
+      invert: d.invert as boolean | undefined,
+      circularMask: d.circularMask as boolean | undefined,
+      label: (d.label as string) ?? l.name,
+      colorbar: { side: 'right' },
+    };
+    const grid = { data: raster.data, width: raster.n, height: raster.m, crs: l.crs, bounds: l.bounds, nodata };
+    const out = await plotRaster(grid, spec);
+    const masked = await plotRaster(grid, { ...spec, alphaRamp: true });
+    results.push({
+      id: l.id,
+      name: l.name,
+      envelope: { kind: 'image', url: out.url, bounds: out.boundsWgs84 },
+      envelopeMasked: { kind: 'image', url: masked.url, bounds: masked.boundsWgs84 },
+      raw: { filename: `${l.id}.tif`, url: l.url },
+    });
+  }
+  return results;
 }
 
 async function runPipelineJob(ctx: SubmitContext, stage: PipelineStage, body: unknown, signal: AbortSignal) {
