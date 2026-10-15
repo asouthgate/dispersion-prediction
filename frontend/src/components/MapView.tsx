@@ -80,7 +80,7 @@ const featureStyles: FeatureStyleConfig = {
       const base = { fillColor: t.color, fillOpacity: t.fillOpacity ?? Feature_OPACITY, outlineColor: t.color, outlineWidth: 2 };
       switch (t.mode) {
         case 'point':
-          return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 7 } };
+          return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 1 } };
         case 'circle':
           return { mode: t.mode, category: t.category ?? t.label, style: { ...base }, options: t.options };
         case 'linestring':
