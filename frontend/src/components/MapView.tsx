@@ -23,8 +23,7 @@ import { CarAuto } from 'react-coolicons';
 import { WaterDrop } from 'react-coolicons';
 import { Sun } from 'react-coolicons';
 import { Move } from 'react-coolicons';
-import { Loading } from 'react-coolicons';
-import { Triangle } from 'react-coolicons';
+import { Triangle, Circle } from 'react-coolicons';
 import { getStoredToken, acquireToken, clearToken } from '../auth';
 import { RoostResultLegend } from './RoostResultLegend';
 
@@ -40,17 +39,17 @@ const PMTILES_FILENAME = 'uk.pmtiles';
 
 /** For vector map data */
 const MAP_PALETTE: MapPalette = {
-  background: 'rgba(63, 72, 62, 1)',
-  land: 'rgba(55, 83, 76, 1)',
-  land_green: '#243b3e',
-  water: 'rgba(78, 122, 202, 1)',
-  road_casing: '#353948',
-  road_fill: '#353948',
-  road_tunnel_fill: '#353948',
-  building: '#545961',
-  label_main: 'rgba(224, 224, 224, 1)',
-  label_minor: 'rgba(224, 224, 224, 1)',
-  label_halo: 'rgba(255, 255, 255, 0.7)',
+  background: '#405c52',
+  land: '#31524b',
+  land_green: '#405c52',
+  water: '#1f2b30',
+  road_casing: '#7a735c',
+  road_fill: '#7a735c',
+  road_tunnel_fill: '#7a735c',
+  building: '#7a735c',
+  label_main: '#ffffff',
+  label_minor: '#ffffff',
+  label_halo: '#ffffff',
   rail: '#618a8d',
   border: '#9e9cab00',
   aeroway: '#918678',
@@ -60,15 +59,16 @@ const iconStyle = { width: 18, height: 18 };
 
 type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string; options?: Record<string, unknown>; fillOpacity?: number };
 
+const ROOST_COLOR = '#ffe70a';
+
 const TOOLS: ToolDef[] = [
   { mode: 'select', label: 'Select', icon: <Move style={iconStyle} />, color: '#888' },
-  { mode: 'circle', label: 'Roost', icon: '◉', color: '#5b8def', options: { maxRadiusMeters: 5000 }, fillOpacity: 0 },
+  { mode: 'circle', label: 'Roost', icon: <Circle style={iconStyle} />, color: ROOST_COLOR, options: { maxRadiusMeters: 5000 }, fillOpacity: 0 },
   { mode: 'polygon', label: 'Building', icon: <Building04 style={iconStyle} />, color: '#a0522d' },
   { mode: 'linestring', label: 'Road', icon: <CarAuto style={iconStyle} />, color: '#888888' },
   { mode: 'linestring', label: 'River', icon: <WaterDrop style={iconStyle} />, color: '#3678b5' },
   { mode: 'point', label: 'Lights', icon: <Sun style={iconStyle} />, color: '#ffbd17' },
-  { mode: 'linestring', label: 'Light Sequence', icon: <Loading style={iconStyle} />, color: '#ff9900', category: 'LightSequence' },
-  { mode: 'polygon', label: 'Resistance Zone', icon: <Triangle style={iconStyle} />, color: '#cc4444', category: 'GenericResistance' },
+  { mode: 'polygon', label: 'Zone', icon: <Triangle style={iconStyle} />, color: '#cc4444', category: 'GenericResistance' },
 ];
 
 const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, icon: t.icon as never, category: t.category, options: t.options }));
@@ -76,6 +76,7 @@ const drawTools: DrawTool[] = TOOLS.map((t) => ({ mode: t.mode, label: t.label, 
 const Feature_OPACITY = 0.2;
 
 const featureStyles: FeatureStyleConfig = {
+  selectionColor: readAccentColor(),
   tools: [
     ...TOOLS.map((t) => {
       const base = { fillColor: t.color, fillOpacity: t.fillOpacity ?? Feature_OPACITY, outlineColor: t.color, outlineWidth: 2 };
@@ -83,7 +84,7 @@ const featureStyles: FeatureStyleConfig = {
         case 'point':
           return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 1 } };
         case 'circle':
-          return { mode: t.mode, category: t.category ?? t.label, style: { ...base }, options: t.options };
+          return { mode: t.mode, category: t.category ?? t.label, style: { ...base, outlineWidth: 4 }, options: t.options };
         case 'linestring':
           return { mode: t.mode, category: t.category ?? t.label, style: { lineColor: t.color, lineWidth: 2 } };
         case 'polygon':
@@ -107,12 +108,12 @@ const ROOST_CROSS_SOURCE = 'roost-cross';
 const ROOST_RECT_FILL = 'roost-rect-fill';
 const ROOST_RECT_LINE = 'roost-rect-line';
 const ROOST_CROSS_LINE = 'roost-cross-line';
-const CROSS_COLOR = '#999';
-const RECT_LINE_WIDTH = 1;
-const CROSS_LINE_WIDTH = 0.5;
+const CROSS_COLOR = ROOST_COLOR;
+const RECT_LINE_WIDTH = 2;
+const CROSS_LINE_WIDTH = 1;
 
 function readAccentColor(): string {
-  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#5b8def';
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
 }
 
 function cardinal(p: { lng: number; lat: number }, r: number, bearing: number) { return destinationPoint(p, r, bearing); }
@@ -164,7 +165,7 @@ function destroyRoostLayers(map: any) {
 function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
   const engine = useEngine();
   const lastKey = useRef<string | null>(null);
-  const accentColor = readAccentColor();
+  const roostColor = ROOST_COLOR;
 
   /** Ensure that there is only one roost */
   useEffect(() => {
@@ -187,29 +188,33 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
   }, [engine]);
 
   useEffect(() => {
-    return engine.subscribe(() => {
+    const syncOverlay = () => {
       const map = renderer.getMap();
       if (!map) return;
       const roost = engine.getSnapshot().features.features.find((f: DataFeature) => f.category === 'Roost');
       if (roost?.circle) {
         const { center, radiusMeters } = roost.circle;
         const key = `${center.lng.toFixed(8)},${center.lat.toFixed(8)},${radiusMeters}`;
-        if (key === lastKey.current) return;
-        const existed = lastKey.current !== null;
-        lastKey.current = key;
-        if (!existed) {
+        const complete = map.getSource(ROOST_RECT_SOURCE) && map.getSource(ROOST_CROSS_SOURCE)
+          && map.getLayer(ROOST_RECT_FILL) && map.getLayer(ROOST_RECT_LINE) && map.getLayer(ROOST_CROSS_LINE);
+        if (key === lastKey.current && complete) return;
+        if (!complete) {
+          destroyRoostLayers(map);
           map.addSource(ROOST_RECT_SOURCE, { type: 'geojson', data: { type: 'Feature', geometry: rectGeom(center, radiusMeters), properties: {} } });
           map.addSource(ROOST_CROSS_SOURCE, { type: 'geojson', data: { type: 'Feature', geometry: crosshairGeom(center, radiusMeters), properties: {} } });
-          createRoostLayers(map, accentColor);
+          createRoostLayers(map, roostColor);
         } else {
           setRoostData(map, center, radiusMeters);
         }
+        lastKey.current = key;
       } else if (lastKey.current !== null) {
         lastKey.current = null;
         destroyRoostLayers(map);
       }
-    });
-  }, [engine, renderer, accentColor]);
+    };
+    syncOverlay();
+    return engine.subscribe(syncOverlay);
+  }, [engine, renderer, roostColor]);
 
   return null;
 }

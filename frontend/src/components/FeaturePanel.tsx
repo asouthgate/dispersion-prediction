@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useFeatures, useEngine, FeaturePanel as FeatureInspector, readGpkgFeatureTables, writeGpkg, decodeGpkgFeature } from '@gsbio/engine';
 import type { DataFeature, DataFieldDef, GpkgTable } from '@gsbio/engine';
-import { Building04, CarAuto, WaterDrop, Sun, Move, Show, Hide, TrashFull, FileUpload, DownloadPackage, Triangle } from 'react-coolicons';
+import { Building04, CarAuto, WaterDrop, Sun, Move, Show, Hide, TrashFull, FileUpload, FileDownload, Triangle } from 'react-coolicons';
 import { configureGeopackageWasm } from '../utils/geopackage';
 
 const categoryIconStyle = { width: 14, height: 14 };
@@ -52,7 +52,7 @@ function resolveFields(feature: DataFeature): DataFieldDef[] {
 
 function renderCategoryIcon(feature: DataFeature): ReactNode {
   if (feature.category === 'Roost') {
-    return <span className="data-feature-dot" style={{ background: '#5b8def' }} />;
+    return <span className="data-feature-dot" style={{ background: 'var(--accent)' }} />;
   }
   return <span className="data-feature-dot">{categoryIconMap[feature.category]}</span>;
 }
@@ -193,7 +193,7 @@ export function FeaturePanel() {
           {allHidden ? ' Show all' : ' Hide all'}
         </button>
         <button className="btn-ghost feature-panel__action-btn" onClick={handleExportGpkg} disabled={showEmpty} title="Export features as GeoPackage (.gpkg)">
-          <DownloadPackage style={{ width: 24, height: 24 }} />
+          <FileDownload style={{ width: 24, height: 24 }} />
         </button>
         <button className="btn-ghost feature-panel__action-btn" onClick={() => fileInputRef.current?.click()} title="Import features">
           <FileUpload style={{ width: 24, height: 24 }} />

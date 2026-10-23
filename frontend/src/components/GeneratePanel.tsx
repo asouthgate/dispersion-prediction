@@ -59,10 +59,6 @@ export function GeneratePanel() {
 
   return (
     <div className="generate-actions">
-      <p className="warning-banner">
-        Please check LiDAR data coverage before generating resistance maps.
-      </p>
-
       <div className="stage-tabs">
         {STAGES.map((s) => (
           <button
