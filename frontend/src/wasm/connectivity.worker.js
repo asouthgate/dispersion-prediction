@@ -1,4 +1,4 @@
-import { initSync, __reset, solve_raster_circuitscape_mixed } from '../../wasm-connectivity/lib/wasm_connect.js';
+import { initSync, __reset, solve_raster_sources_mg_mixed } from '../../wasm-connectivity/lib/wasm_connect.js';
 import wasmUrl from '../../wasm-connectivity/lib/wasm_connect_bg.wasm?url';
 
 let compiledModule = null;
@@ -31,7 +31,7 @@ self.onmessage = async (e) => {
     await getCompiledModule();
     freshInstance();
     const [resistance, nrows, ncols, nodata, source, ground, maxIter, tol, useDirichletGround] = args;
-    const json = solve_raster_circuitscape_mixed(
+    const json = solve_raster_sources_mg_mixed(
       asF32(resistance), nrows, ncols, nodata,
       asF32(source), asF32(ground), maxIter, tol, !!useDirichletGround,
     );
