@@ -262,7 +262,8 @@ export function createDarkCorridorsExecutor(): Executor {
       // Lamp resistance is an additive light penalty: zero means darkness,
       // not a missing/insulating cell. Keep a conductive background everywhere
       // terrain is valid, without adding any landscape/road/river resistance.
-      const lampRes = Float32Array.from(result.lampRes, value => Number.isFinite(value) ? 1 + value : NaN);
+      const resistanceFloor = 0.001 * params.lamp_resmax;
+      const lampRes = Float32Array.from(result.lampRes, value => Number.isFinite(value) ? resistanceFloor + value : NaN);
 
       ctx.onLog?.('info', 'Solving darkness connectivity in browser via WebAssembly (multigrid CG)…');
       ctx.onProgress?.({ step: 'submit', fraction: 0.95, label: 'Solving darkness connectivity (WebAssembly)...' });

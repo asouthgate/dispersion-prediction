@@ -59,7 +59,8 @@ it('keeps dark cells conductive, solves only lighting resistance, and maps both 
   expect(horseshoeBatModel.stages?.map(stage => stage.key)).toEqual(['coverage', 'resistance', 'current', 'darkness']);
 
   const [resistance, rows, cols, nodata, , ground] = vi.mocked(solveConnectivity).mock.calls[0];
-  expect([...resistance]).toEqual([1, NaN, 6, 11]);
+  const expectedResistance = new Float32Array([0.1, NaN, 5.1, 10.1]);
+  expect(resistance).toEqual(expectedResistance);
   expect([rows, cols, nodata]).toEqual([2, 2, -9999]);
   expect([...ground]).toEqual([0, 0, 0, 1]);
   expect([...lampRes]).toEqual([0, NaN, 5, 10]);
@@ -72,7 +73,7 @@ it('keeps dark cells conductive, solves only lighting resistance, and maps both 
   }
   expect(result.layers.map(layer => layer.id)).toEqual(['lamp_res', 'darkness_current']);
   expect(result.layers[0].raw?.bytes).toEqual(new Uint8Array(encodeGeoTiff(
-    { data: new Float32Array([1, NaN, 6, 11]), width: 2, height: 2 }, { bounds },
+    { data: expectedResistance, width: 2, height: 2 }, { bounds },
   )));
   expect(result.layers[1].raw?.bytes).toEqual(new Uint8Array(encodeGeoTiff(
     { data: new Float32Array([1, NaN, 2, 10]), width: 2, height: 2 }, { bounds },
