@@ -27,7 +27,7 @@ export function RoostResultLegend({ renderer }: { renderer: TerraDraw2DRenderer 
         const position = map.project([west, south]);
         for (const id of run.visibleLayerIds) {
           const items = run.layerLegends?.[id];
-          if (items?.length) placed.push({ id: `${run.runId}:${id}`, items, left: position.x + 8, top: position.y - 8 });
+          if (items?.length) placed.push({ id: `${run.runId}:${id}`, items, left: position.x, top: position.y + 8 });
         }
       }
       setLegends(placed);
