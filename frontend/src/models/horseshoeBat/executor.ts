@@ -15,6 +15,9 @@ import { fetchRaster } from '../../wasm/geotiffFetch';
 import { ingestResistanceData, computeResistancePipeline, buildResistanceResultLayers, encodeTotalResistance, type StoredTotalRes } from './resistancePipeline';
 import { LIGHTMAP_CATEGORY, type LightMapData } from './lightMap';
 import type { ResistanceParams } from '../../wasm/resistanceCompute';
+import { createDarkCorridorsExecutor } from '../darkCorridors/executor';
+import { currentQuantiles } from '../../wasm/currentQuantiles';
+import { JET_COLORS } from '../../../wasm-connectivity/example/src/render.js';
 
 const LAMP_CATEGORIES = new Set(['Lights', 'LightSequence']);
 
@@ -98,7 +101,10 @@ async function plotServerLayers(ctx: SubmitContext, layers: ServerLayer[]): Prom
   const results: ResultLayerEntry[] = [];
   for (const l of serverLayers) {
     const d = l.display ?? {};
-    const raster = await fetchRaster(l.url);
+    const isCurrent = l.id === 'current' || l.id === 'log_current';
+    // Rank raw current for both server views, avoiding rounding in log TIFFs.
+    const rawCurrent = l.id === 'log_current' ? serverLayers.find(layer => layer.id === 'current') : undefined;
+    const raster = await fetchRaster(rawCurrent?.url ?? l.url);
     const nodata = typeof d.nodata === 'number' ? (d.nodata as number) : undefined;
     const spec: RasterPlotSpec = {
       palette: (d.palette as RasterPlotSpec['palette']) ?? 'magma',
@@ -111,8 +117,12 @@ async function plotServerLayers(ctx: SubmitContext, layers: ServerLayer[]): Prom
       circularMask: d.circularMask as boolean | undefined,
       label: (d.label as string) ?? l.name,
       colorbar: { side: 'right' },
+      ...(isCurrent ? {
+        scale: 'linear', preTransformed: false, transform: 'none', vmin: 0, vmax: 100,
+        label: 'Current percentile (%)', palette: JET_COLORS, alphaCutoff: 0.25,
+      } : {}),
     };
-    const grid = { data: raster.data, width: raster.n, height: raster.m, crs: l.crs, bounds: l.bounds, nodata };
+    const grid = { data: isCurrent ? currentQuantiles(raster.data, nodata) : raster.data, width: raster.n, height: raster.m, crs: l.crs, bounds: l.bounds, nodata };
     const out = await plotRaster(grid, spec);
     const masked = await plotRaster(grid, { ...spec, alphaRamp: true });
     results.push({
@@ -231,8 +241,12 @@ async function runResistanceStage(
       },
     });
 
+    ctx.onProgress?.({ step: 'submit', fraction: 0.98, label: 'Computing resistance maps (WebAssembly)...' });
+    ctx.onLog?.('info', 'Computing resistance maps (WebAssembly)...');
     const pipelineResult = await computeResistancePipeline(pipelineInput);
 
+    ctx.onProgress?.({ step: 'submit', fraction: 0.985, label: 'Rendering resistance maps...' });
+    ctx.onLog?.('info', 'Rendering resistance maps...');
     layers.push(...(await buildResistanceResultLayers(pipelineResult, coverageMask, extent)));
 
     const totalRes: StoredTotalRes = { data: pipelineResult.totalRes, extent };
@@ -255,9 +269,14 @@ async function runResistanceStage(
 }
 
 export function createHorseshoeBatExecutor(): Executor {
+  const darkness = createDarkCorridorsExecutor();
   return {
     async preprocess(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (ctx.stage === 'darkness') {
+        const prepared = await darkness.preprocess(ctx, signal);
+        return { payload: { ...(prepared.payload as object), stage: 'darkness' } };
+      }
       const roost = selectRoost(ctx.features);
       if (!roost) {
         ctx.onLog?.('error', 'No Roost circle drawn: place a roost first.');
@@ -288,6 +307,9 @@ export function createHorseshoeBatExecutor(): Executor {
 
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if ((ctx.payload as { stage?: string }).stage === 'darkness') {
+        return darkness.submit(ctx, signal);
+      }
       const { stage, roost, features, lampFeatures, resistanceFeatures, lightMapFeature, params } = ctx.payload as PipelinePayload;
       const lightMap = lightMapData(lightMapFeature);
 

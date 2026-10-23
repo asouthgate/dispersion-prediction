@@ -7,7 +7,7 @@ import { GeneratePanel } from './GeneratePanel';
 import { LightUpload } from './LightUpload';
 import { HelpPanel } from './HelpPanel';
 import { RoostFinderImport, RoostFinderParams, RoostFinderRun } from './RoostFinderPanel';
-import { Sun, Settings, EditPencilLine01, Layers, CircleHelp, FileUpload as FileUploadIcon, Play, Map, MapPin } from 'react-coolicons';
+import { Sun, Settings, EditPencilLine01, Layers, Circle, CircleHelp, FileUpload as FileUploadIcon, Play, Map, MapPin } from 'react-coolicons';
 
 interface SectionDef {
   id: string;
@@ -25,7 +25,7 @@ const iconStyle = { width: 16, height: 16 };
 const CONNECTIVITY_SECTIONS: SectionDef[] = [
   { id: 'lights', icon: <Sun style={iconStyle} />, label: 'Lighting' },
   { id: 'params', icon: <Settings style={iconStyle} />, label: 'Parameters' },
-  { id: 'roost', icon: '◉', label: 'Roost' },
+  { id: 'roost', icon: <Circle style={iconStyle} />, label: 'Roost' },
   { id: 'drawings', icon: <EditPencilLine01 style={iconStyle} />, label: 'Features' },
   { id: 'generate', icon: <Layers style={iconStyle} />, label: 'Generate' },
   { id: 'help', icon: <CircleHelp style={iconStyle} />, label: 'Help' },

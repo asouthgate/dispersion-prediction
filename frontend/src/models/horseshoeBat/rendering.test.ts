@@ -8,11 +8,18 @@ vi.mock('@gsbio/engine', async (importOriginal) => ({
 }));
 vi.mock('@gsbio/engine/remote', () => ({ runRemoteJob: vi.fn() }));
 vi.mock('../../wasm/geotiffFetch', () => ({ fetchRaster: vi.fn() }));
+vi.mock('../../wasm/connectivityCompute', () => ({ solveConnectivity: vi.fn() }));
+vi.mock('./resistancePipeline', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./resistancePipeline')>(),
+  ingestResistanceData: vi.fn(),
+  computeResistancePipeline: vi.fn(),
+}));
 
 import { plotRaster, encodeGeoTiff } from '@gsbio/engine';
 import { runRemoteJob } from '@gsbio/engine/remote';
 import { fetchRaster } from '../../wasm/geotiffFetch';
 import { buildResistanceResultLayers } from './resistancePipeline';
+import { JET_COLORS } from '../../../wasm-connectivity/example/src/render.js';
 import { createHorseshoeBatExecutor } from './executor';
 
 const extent = { m: 2, n: 2, pixw: 1, xmin: 300000, ymin: 60000, xmax: 300002, ymax: 60002 };
@@ -73,10 +80,27 @@ it('renders server layers sequentially and retains image variants and download U
   expect(fetchRaster).toHaveBeenCalledTimes(3);
   expect(result.layers.map(layer => layer.id)).toEqual(['dtm', 'dsm', 'current']);
   for (const layer of result.layers) {
-    expect(layer.envelope).toEqual({ kind: 'image', url: `${layer.id}-opaque`, bounds });
-    expect(layer.envelopeMasked).toEqual({ kind: 'image', url: `${layer.id}-alpha`, bounds });
+    const label = layer.id === 'current' ? 'Current percentile (%)' : layer.id;
+    expect(layer.envelope).toEqual({ kind: 'image', url: `${label}-opaque`, bounds });
+    expect(layer.envelopeMasked).toEqual({ kind: 'image', url: `${label}-alpha`, bounds });
     expect(layer.raw).toEqual({ filename: `${layer.id}.tif`, url: `/${layer.id}.tif` });
   }
+});
+
+it('uses identical Jet percentile colours for both server current views, retaining raw TIFFs', async () => {
+  vi.mocked(runRemoteJob).mockResolvedValue({ status: 'completed', result: { layers:
+    ['current', 'log_current'].map(id => ({ id, name: id, url: `/${id}.tif`, crs: 'EPSG:27700', bounds,
+      display: { preTransformed: id === 'log_current', transform: 'log1p', scale: 'linear' },
+    })),
+  } } as Awaited<ReturnType<typeof runRemoteJob>>);
+  vi.mocked(fetchRaster).mockResolvedValue({ data: new Float32Array([1, 0, 2, 10]), m: 2, n: 2 } as Awaited<ReturnType<typeof fetchRaster>>);
+  await createHorseshoeBatExecutor().submit({ payload: { stage: 'coverage', roost: {} } } as SubmitContext, new AbortController().signal);
+  expect(plotRaster).toHaveBeenCalledTimes(4);
+  for (const [grid, spec] of vi.mocked(plotRaster).mock.calls) {
+    expect([...grid.data]).toEqual([0, 0, 50, 100]);
+    expect(spec).toMatchObject({ palette: JET_COLORS, label: 'Current percentile (%)', scale: 'linear', vmin: 0, vmax: 100, alphaCutoff: 0.25, transform: 'none', preTransformed: false });
+  }
+  expect(vi.mocked(fetchRaster).mock.calls.map(([url]) => url)).toEqual(['/current.tif', '/current.tif']);
 });
 
 it('propagates rendering failures without starting further resistance layers', async () => {

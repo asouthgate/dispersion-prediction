@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TriangleWarning } from 'react-coolicons';
 import { useEngine, useModel, ParamField } from '@gsbio/engine';
 import type { ModelParamDef } from '@gsbio/engine';
 
@@ -45,9 +46,10 @@ export function ParameterPanel() {
 
   return (
     <div className="panel-section">
-      <p className="warning-banner">
-        Warning: please read <a href="https://link.springer.com/article/10.1007/s10980-019-00953-1" target="_blank" rel="noopener noreferrer">this paper</a> before altering these parameters.
-      </p>
+      <div className="parameter-warning">
+        <TriangleWarning className="parameter-warning__icon" aria-hidden="true" />
+        <p>Warning: please read <a href="https://link.springer.com/article/10.1007/s10980-019-00953-1" target="_blank" rel="noopener noreferrer">this paper</a> before altering these parameters.</p>
+      </div>
 
       {top.map((p) => (
         <ParamField

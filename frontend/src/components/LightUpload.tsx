@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { FileUpload } from 'react-coolicons';
 import { useEngine, useFeatures, decodeGeoTiff, plotRaster, type FileSourceDef, type DataFeature, type DecodedRaster } from '@gsbio/engine';
 import { AgreementModal } from './AgreementModal';
 import { parseLightsCsv } from '../utils/parseLightsCsv';
@@ -36,7 +37,7 @@ export function LightUpload() {
   const [loaded, setLoaded] = useState(0);
   const [lightMapWarning, setLightMapWarning] = useState('');
   const [showAgreement, setShowAgreement] = useState(false);
-  const lightMapInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lightMapFeature = featureState.features.find((f) => f.category === LIGHTMAP_CATEGORY);
   const lightMap = lightMapFeature?.data?.raster as DecodedRaster | null | undefined;
@@ -44,8 +45,15 @@ export function LightUpload() {
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
     setWarning('');
+    setLightMapWarning('');
     setLoaded(0);
+
+    if (/\.tiff?$/i.test(file.name)) {
+      handleLightMap(file);
+      return;
+    }
 
     if (isGpkgFile(file.name)) {
       await configureGeopackageWasm();
@@ -99,9 +107,7 @@ export function LightUpload() {
     reader.readAsText(file);
   };
 
-  const handleLightMap = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleLightMap = (file: File) => {
     setLightMapWarning('');
 
     const reader = new FileReader();
@@ -128,7 +134,7 @@ export function LightUpload() {
             raster: { kind: 'image', url: plotted.url, bounds: plotted.boundsWgs84 },
           };
           engine.addFeature(feature);
-          if (lightMapInputRef.current) lightMapInputRef.current.value = '';
+          if (fileInputRef.current) fileInputRef.current.value = '';
         })
         .catch((err) => {
           setLightMapWarning(err instanceof Error ? err.message : 'Failed to read light map GeoTIFF.');
@@ -140,21 +146,25 @@ export function LightUpload() {
 
   return (
     <div className="csv-upload">
-      <p className="hint">Import a GeoJSON file with Point features (WGS84), a GeoPackage (.gpkg), or a CSV with lat/lng or easting/northing columns plus a height column (height or z).</p>
-      <input type="file" accept=".geojson,.json,.csv,.gpkg" onChange={handleFile} />
+      <button type="button" className="btn-ghost lighting-import-btn" onClick={() => fileInputRef.current?.click()}>
+        <FileUpload aria-hidden="true" />
+        Import lighting file
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".geojson,.json,.csv,.gpkg,.tif,.tiff"
+        onChange={handleFile}
+        hidden
+      />
       {loaded > 0 && (
         <p className="hint">Loaded {loaded} lamps</p>
       )}
-
-      <div className="light-map-upload">
-        <p className="hint">Alternatively, import a pre-computed light map (single-band GeoTIFF, EPSG:27700 or EPSG:4326). It replaces lamp-point irradiance and is normalised to the lamp resistance factor.</p>
-        <input ref={lightMapInputRef} type="file" accept=".tif,.tiff" onChange={handleLightMap} />
-        {lightMap && (
-          <p className="hint">
-            Light map loaded: {lightMap.width}&times;{lightMap.height} px, {lightMap.crs}
-          </p>
-        )}
-      </div>
+      {lightMap && (
+        <p className="hint">
+          Light map loaded: {lightMap.width}&times;{lightMap.height} px, {lightMap.crs}
+        </p>
+      )}
       {lightMapWarning && (
         <div className="warning-banner">{lightMapWarning}</div>
       )}

@@ -11,6 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@gsbio/engine": "file:./gsbio-engine",
     "@ngageoint/geopackage": "^4.2.9",
     "@turf/circle": "^7.4.0",

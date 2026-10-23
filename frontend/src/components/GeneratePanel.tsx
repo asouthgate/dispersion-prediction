@@ -13,6 +13,7 @@ const STAGES: { key: PipelineStage; label: string }[] = [
   { key: 'coverage', label: 'Coverage' },
   { key: 'resistance', label: 'Resistance' },
   { key: 'current', label: 'Current' },
+  { key: 'darkness', label: 'Darkness (experimental)' },
 ];
 
 export function GeneratePanel() {
@@ -58,10 +59,6 @@ export function GeneratePanel() {
 
   return (
     <div className="generate-actions">
-      <p className="warning-banner">
-        Please check LiDAR data coverage before generating resistance maps.
-      </p>
-
       <div className="stage-tabs">
         {STAGES.map((s) => (
           <button
