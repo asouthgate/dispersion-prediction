@@ -7,6 +7,7 @@ import { GeneratePanel } from './GeneratePanel';
 import { LightUpload } from './LightUpload';
 import { HelpPanel } from './HelpPanel';
 import { RoostFinderImport, RoostFinderParams, RoostFinderRun } from './RoostFinderPanel';
+import { DarkCorridorsParams, DarkCorridorsRun } from './DarkCorridorsPanel';
 import { Sun, Settings, EditPencilLine01, Layers, CircleHelp, FileUpload as FileUploadIcon, Play, Map, MapPin } from 'react-coolicons';
 
 interface SectionDef {
@@ -16,7 +17,7 @@ interface SectionDef {
   defaultOpen?: boolean;
 }
 
-type PanelTab = 'connectivity' | 'roost';
+type PanelTab = 'dark' | 'connectivity' | 'roost';
 
 export type { PanelTab };
 
@@ -37,7 +38,15 @@ const ROOST_SECTIONS: SectionDef[] = [
   { id: 'run', icon: <Play style={iconStyle} />, label: 'Run Model' },
 ];
 
+const DARK_SECTIONS: SectionDef[] = [
+  { id: 'lights', icon: <Sun style={iconStyle} />, label: 'Lighting' },
+  { id: 'params', icon: <Settings style={iconStyle} />, label: 'Parameters' },
+  { id: 'roost', icon: '◉', label: 'Roost' },
+  { id: 'generate', icon: <Layers style={iconStyle} />, label: 'Generate' },
+];
+
 const TABS: { id: PanelTab; label: string }[] = [
+  { id: 'dark', label: 'Dark Corridors' },
   { id: 'connectivity', label: 'Connectivity' },
   { id: 'roost', label: 'Roost Finder' },
 ];
@@ -51,14 +60,15 @@ interface SidePanelProps {
 
 export function SidePanel({ activeTab, onTabChange, collapsed, onToggleCollapsed }: SidePanelProps) {
   const [connectivityOpen, setConnectivityOpen] = useState<Set<string>>(new Set());
+  const [darkOpen, setDarkOpen] = useState<Set<string>>(new Set());
   const [roostOpen, setRoostOpen] = useState<Set<string>>(
     () => new Set(ROOST_SECTIONS.filter((s) => s.defaultOpen).map((s) => s.id)),
   );
   const { summaries } = useResults();
 
-  const sections = activeTab === 'connectivity' ? CONNECTIVITY_SECTIONS : ROOST_SECTIONS;
-  const openSections = activeTab === 'connectivity' ? connectivityOpen : roostOpen;
-  const setOpenSections = activeTab === 'connectivity' ? setConnectivityOpen : setRoostOpen;
+  const sections = activeTab === 'connectivity' ? CONNECTIVITY_SECTIONS : activeTab === 'dark' ? DARK_SECTIONS : ROOST_SECTIONS;
+  const openSections = activeTab === 'connectivity' ? connectivityOpen : activeTab === 'dark' ? darkOpen : roostOpen;
+  const setOpenSections = activeTab === 'connectivity' ? setConnectivityOpen : activeTab === 'dark' ? setDarkOpen : setRoostOpen;
 
   const seenFinished = useRef(0);
   useEffect(() => {
@@ -68,6 +78,7 @@ export function SidePanel({ activeTab, onTabChange, collapsed, onToggleCollapsed
     if (finished > seenFinished.current) {
       seenFinished.current = finished;
       setConnectivityOpen((prev) => prev.has('generate') ? prev : new Set(prev).add('generate'));
+      setDarkOpen((prev) => prev.has('generate') ? prev : new Set(prev).add('generate'));
     }
   }, [summaries]);
 
@@ -83,10 +94,10 @@ export function SidePanel({ activeTab, onTabChange, collapsed, onToggleCollapsed
   const renderBody = (id: string) => {
     switch (id) {
       case 'lights': return <LightUpload />;
-      case 'params': return activeTab === 'roost' ? <RoostFinderParams /> : <ParameterPanel />;
+      case 'params': return activeTab === 'roost' ? <RoostFinderParams /> : activeTab === 'dark' ? <DarkCorridorsParams /> : <ParameterPanel />;
       case 'roost': return <RoostPanel />;
       case 'drawings': return <FeaturePanel />;
-      case 'generate': return <GeneratePanel />;
+      case 'generate': return activeTab === 'dark' ? <DarkCorridorsRun /> : <GeneratePanel />;
       case 'help': return <HelpPanel />;
       case 'import': return <RoostFinderImport />;
       case 'run': return <RoostFinderRun />;
@@ -111,7 +122,7 @@ export function SidePanel({ activeTab, onTabChange, collapsed, onToggleCollapsed
               onClick={() => switchTab(t.id)}
               title={t.label}
             >
-              <span className="panel-icon-content">{t.id === 'connectivity' ? <Map style={iconStyle} /> : <MapPin style={iconStyle} />}</span>
+              <span className="panel-icon-content">{t.id === 'dark' ? <Sun style={iconStyle} /> : t.id === 'connectivity' ? <Map style={iconStyle} /> : <MapPin style={iconStyle} />}</span>
             </button>
           ))}
           <div className="panel-icon-rail-divider" />

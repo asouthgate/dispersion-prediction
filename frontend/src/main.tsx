@@ -4,6 +4,7 @@ import { createEngine, EngineProvider } from '@gsbio/engine';
 import { App } from './App';
 import { installHorseshoeBat, horseshoeBatModel } from './models/horseshoeBat';
 import { installRoostFinder, ROOST_FINDER_MODEL_ID } from './models/roostFinder';
+import { installDarkCorridors, DARK_CORRIDORS_MODEL_ID } from './models/darkCorridors';
 import type { PanelTab } from './components/SidePanel';
 import { acquireToken } from './auth';
 import { trackPageview } from './analytics';
@@ -23,6 +24,7 @@ export function AppRoot() {
     e.autoShowResults = true;
     installHorseshoeBat(e);
     installRoostFinder(e);
+    installDarkCorridors(e);
     return e;
   });
 
@@ -30,6 +32,8 @@ export function AppRoot() {
     if (activeTab === 'roost') {
       // TODO: fix this, it's inconsistent
       engine.setModel(ROOST_FINDER_MODEL_ID);
+    } else if (activeTab === 'dark') {
+      engine.setModel(DARK_CORRIDORS_MODEL_ID);
     } else {
       engine.setModel(horseshoeBatModel.id);
     }

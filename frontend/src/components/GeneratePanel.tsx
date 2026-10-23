@@ -13,6 +13,7 @@ const STAGES: { key: PipelineStage; label: string }[] = [
   { key: 'coverage', label: 'Coverage' },
   { key: 'resistance', label: 'Resistance' },
   { key: 'current', label: 'Current' },
+  { key: 'connectivity', label: 'Current (experimental)' },
 ];
 
 export function GeneratePanel() {

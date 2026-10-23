@@ -1,5 +1,5 @@
 import type { Executor, ResultLayerEntry, SimulationEngine } from '@gsbio/engine';
-import { plotRaster, encodeGeoTiff, type RasterAnnotation } from '@gsbio/engine';
+import { plotRaster, encodeGeoTiff, type RasterPlotSpec } from '@gsbio/engine';
 import { computeRoostFinder, base64ToFloat32, type RoostFinderWasmResult } from '../../wasm/roostCompute';
 import {
   roostFinderModel,
@@ -19,16 +19,26 @@ export interface RoostFinderSummary {
 /** Contour levels as fractions of the maximum loss (matches the paper). */
 const CONTOUR_LEVELS = [0.1, 0.2, 0.3, 0.4];
 
-function annotations(raw: RoostFinderWasmResult): RasterAnnotation[] {
-  const out: RasterAnnotation[] = raw.detectors.map((d) => {
-    const [lng, lat] = bngToWgs84LngLat(d.x, d.y);
-    return { lng, lat, radius: 4, color: '#111111', strokeColor: '#ffffff', strokeWidth: 1 };
+function pointLayer(raw: RoostFinderWasmResult): ResultLayerEntry {
+  const point = (x: number, y: number, kind: string, count?: number): GeoJSON.Feature<GeoJSON.Point> => ({
+    type: 'Feature', geometry: { type: 'Point', coordinates: bngToWgs84LngLat(x, y) },
+    properties: { kind, ...(count === undefined ? {} : { count }) },
   });
-  const [plng, plat] = bngToWgs84LngLat(raw.x, raw.y);
-  out.push({ lng: plng, lat: plat, radius: 8, color: '#e11d48' });
-  const [wlng, wlat] = bngToWgs84LngLat(raw.weighted_mean_x, raw.weighted_mean_y);
-  out.push({ lng: wlng, lat: wlat, radius: 7, color: '#2563eb' });
-  return out;
+  const data: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [
+    ...raw.detectors.map(d => point(d.x, d.y, 'detector', d.count)),
+    point(raw.x, raw.y, 'roost'),
+    point(raw.weighted_mean_x, raw.weighted_mean_y, 'calls'),
+  ] };
+  const legend = [
+    { value: 'roost', label: 'Estimated roost', radius: 8, color: '#e11d48' },
+    { value: 'calls', label: 'Center of calls', radius: 7, color: '#2563eb' },
+    { value: 'detector', label: 'Detector', radius: 4, color: '#111111', strokeColor: '#ffffff', strokeWidth: 1 },
+  ];
+  return {
+    id: 'roost_points', name: 'Roost points', overlay: true, legend,
+    envelope: { kind: 'geojson', data, circleStyles: [...legend].reverse() },
+    raw: { filename: 'roost_points.geojson', bytes: new TextEncoder().encode(JSON.stringify(data)) },
+  };
 }
 
 export function createRoostFinderExecutor(): Executor {
@@ -68,16 +78,17 @@ export function createRoostFinderExecutor(): Executor {
       const boundsBng = raw.bounds_bng;
 
       ctx.onLog?.('info', 'Rendering roost surface…');
-      const plotted = await plotRaster(grid, {
+      const spec: RasterPlotSpec = {
         palette: 'roost-loss',
         invert: true,
         vmin: 0,
         scale: 'linear',
         label: 'Loss',
         contours: { levels: CONTOUR_LEVELS },
-        annotations: annotations(raw),
         colorbar: { side: 'right' },
-      });
+      };
+      const plotted = await plotRaster(grid, spec);
+      const masked = await plotRaster(grid, { ...spec, alphaRamp: true });
 
       const tif = new Uint8Array(
         encodeGeoTiff({ data, width: raw.grid_size, height: raw.grid_size }, { bounds: boundsBng }),
@@ -86,10 +97,12 @@ export function createRoostFinderExecutor(): Executor {
       const layers: ResultLayerEntry[] = [
         {
           id: ROOST_SURFACE_LAYER_ID,
-          name: 'Roost result',
+          name: 'Roost contours',
           envelope: { kind: 'image', url: plotted.url, bounds: plotted.boundsWgs84 },
+          envelopeMasked: { kind: 'image', url: masked.url, bounds: masked.boundsWgs84 },
           raw: { filename: 'roost_loss_surface.tif', bytes: tif },
         },
+        pointLayer(raw),
       ];
 
       const summary: RoostFinderSummary = {
