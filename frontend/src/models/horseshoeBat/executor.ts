@@ -6,17 +6,16 @@ import type {
   RasterPlotSpec,
   SubmitContext,
 } from '@gsbio/engine';
-import { plotRaster, alignRasterToGrid, encodeGeoTiff } from '@gsbio/engine';
+import { plotRaster, alignRasterToGrid } from '@gsbio/engine';
 import type { PipelineStage } from './model';
 import { horseshoeBatModel } from './model';
 import { createPipelineAdapter, type JobStatus } from './pipelineClient';
 import { runRemoteJob } from '@gsbio/engine/remote';
 import { fetchRaster } from '../../wasm/geotiffFetch';
-import { ingestResistanceData, computeResistancePipeline, buildResistanceResultLayers, encodeTotalResistance, applyMask, type StoredTotalRes } from './resistancePipeline';
+import { ingestResistanceData, computeResistancePipeline, buildResistanceResultLayers, encodeTotalResistance, type StoredTotalRes } from './resistancePipeline';
 import { LIGHTMAP_CATEGORY, type LightMapData } from './lightMap';
 import type { ResistanceParams } from '../../wasm/resistanceCompute';
-import { wgs84ToBng } from '../../utils/projections';
-import { solveConnectivity, type ConnectivitySolveResult } from '../../wasm/connectivityCompute';
+import { createDarkCorridorsExecutor } from '../darkCorridors/executor';
 import { currentQuantiles } from '../../wasm/currentQuantiles';
 import { JET_COLORS } from '../../../wasm-connectivity/example/src/render.js';
 
@@ -137,90 +136,6 @@ async function plotServerLayers(ctx: SubmitContext, layers: ServerLayer[]): Prom
   return results;
 }
 
-function buildSourceAndGround(
-  roost: RoostInfo,
-  extent: StoredTotalRes['extent'],
-  nCircles: number,
-): { source: Float32Array; ground: Float32Array } {
-  const [easting, northing] = wgs84ToBng(roost.lat, roost.lng);
-  const { m, n, pixw, xmin, ymax } = extent;
-  const size = m * n;
-  const source = new Float32Array(size);
-  const ground = new Float32Array(size);
-
-  const roostCol = Math.floor((easting - xmin) / pixw);
-  const roostRow = Math.floor((ymax - northing) / pixw);
-  const radiusCells = roost.radiusMeters / pixw;
-  const lb = Math.max(radiusCells / Math.max(nCircles, 1), 1.0);
-
-  let r = lb;
-  while (r <= radiusCells) {
-    const nPts = Math.max(Math.floor(3.0 * r), 10);
-    for (let i = 0; i < nPts; i++) {
-      const angle = (2.0 * Math.PI * i) / nPts;
-      const col = Math.floor(roostCol + r * Math.sin(angle));
-      const row = Math.floor(roostRow + r * Math.cos(angle));
-      if (col >= 0 && col < n && row >= 0 && row < m) {
-        source[row * n + col] = 1.0;
-      }
-    }
-    r += lb;
-  }
-
-  const gc = Math.floor(roostCol);
-  const gr = Math.floor(roostRow);
-  if (gc >= 0 && gc < n && gr >= 0 && gr < m) {
-    ground[gr * n + gc] = 1.0;
-  }
-
-  return { source, ground };
-}
-
-async function buildConnectivityResultLayers(
-  result: ConnectivitySolveResult,
-  totalRes: StoredTotalRes,
-): Promise<ResultLayerEntry[]> {
-  const { m, n, xmin, ymin, xmax, ymax } = totalRes.extent;
-  const bngExtent: [number, number, number, number] = [xmin, ymin, xmax, ymax];
-
-  const mask = new Uint8Array(totalRes.data.length);
-  for (let i = 0; i < totalRes.data.length; i++) {
-    mask[i] = Number.isFinite(totalRes.data[i]) ? 1 : 0;
-  }
-
-  const layers: ResultLayerEntry[] = [];
-  const addLayer = async (
-    id: string,
-    name: string,
-    data: Float32Array,
-    scale: 'linear' | 'quantile',
-    circularMask: boolean,
-  ) => {
-    const masked = applyMask(data, mask);
-    const displayData = scale === 'quantile' ? currentQuantiles(masked) : masked;
-    const grid = { data: displayData, width: n, height: m, crs: 'EPSG:27700' as const, bounds: bngExtent };
-    const spec: RasterPlotSpec = {
-      palette: 'magma', scale: 'linear', label: name, circularMask, colorbar: { side: 'right' },
-      ...(scale === 'quantile' ? { palette: JET_COLORS, label: 'Current percentile (%)', vmin: 0, vmax: 100, alphaCutoff: 0.25 } : {}),
-    };
-    const plotted = await plotRaster(grid, spec);
-    const alphaPlotted = await plotRaster(grid, { ...spec, alphaRamp: true });
-    const tif = new Uint8Array(encodeGeoTiff({ data: masked, width: n, height: m }, { bounds: bngExtent }));
-    layers.push({
-      id,
-      name,
-      envelope: { kind: 'image', url: plotted.url, bounds: plotted.boundsWgs84 },
-      envelopeMasked: { kind: 'image', url: alphaPlotted.url, bounds: alphaPlotted.boundsWgs84 },
-      raw: { filename: `${id}.tif`, bytes: tif },
-    });
-  };
-
-  await addLayer('connectivity_voltage', 'Voltage', result.voltages, 'linear', false);
-  await addLayer('connectivity_current', 'Current (experimental)', result.current, 'quantile', true);
-
-  return layers;
-}
-
 async function runPipelineJob(ctx: SubmitContext, stage: PipelineStage, body: unknown, signal: AbortSignal) {
   return runRemoteJob(createPipelineAdapter(stage), body, signal, {
     onLog: ctx.onLog,
@@ -326,8 +241,12 @@ async function runResistanceStage(
       },
     });
 
+    ctx.onProgress?.({ step: 'submit', fraction: 0.98, label: 'Computing resistance maps (WebAssembly)...' });
+    ctx.onLog?.('info', 'Computing resistance maps (WebAssembly)...');
     const pipelineResult = await computeResistancePipeline(pipelineInput);
 
+    ctx.onProgress?.({ step: 'submit', fraction: 0.985, label: 'Rendering resistance maps...' });
+    ctx.onLog?.('info', 'Rendering resistance maps...');
     layers.push(...(await buildResistanceResultLayers(pipelineResult, coverageMask, extent)));
 
     const totalRes: StoredTotalRes = { data: pipelineResult.totalRes, extent };
@@ -350,9 +269,14 @@ async function runResistanceStage(
 }
 
 export function createHorseshoeBatExecutor(): Executor {
+  const darkness = createDarkCorridorsExecutor();
   return {
     async preprocess(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (ctx.stage === 'darkness') {
+        const prepared = await darkness.preprocess(ctx, signal);
+        return { payload: { ...(prepared.payload as object), stage: 'darkness' } };
+      }
       const roost = selectRoost(ctx.features);
       if (!roost) {
         ctx.onLog?.('error', 'No Roost circle drawn: place a roost first.');
@@ -383,6 +307,9 @@ export function createHorseshoeBatExecutor(): Executor {
 
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if ((ctx.payload as { stage?: string }).stage === 'darkness') {
+        return darkness.submit(ctx, signal);
+      }
       const { stage, roost, features, lampFeatures, resistanceFeatures, lightMapFeature, params } = ctx.payload as PipelinePayload;
       const lightMap = lightMapData(lightMapFeature);
 
@@ -409,27 +336,6 @@ export function createHorseshoeBatExecutor(): Executor {
         }
         ctx.onProgress?.({ step: 'submit', fraction: 1, label: `${result.layers.length} layers` });
         return { layers: result.layers, summary: { stage, layerCount: result.layers.length }, taskId: result.taskId };
-      }
-
-      if (stage === 'connectivity') {
-        // Same as 'current', but solves the circuit locally via the
-        // WebAssembly multigrid solver instead of calling Circuitscape.
-        const resistance = await runResistanceStage(ctx, signal, { roost, features, lampFeatures, resistanceFeatures, lightMap, params });
-        if (resistance.cancelled) {
-          return { layers: [] as ResultLayerEntry[], summary: { status: 'cancelled' } };
-        }
-        ctx.onLog?.('info', 'Solving connectivity in browser via WebAssembly (multigrid CG)...');
-        const nCircles = Math.round(params.n_circles as number) || 50;
-        const extent = resistance.totalRes.extent;
-        const { source, ground } = buildSourceAndGround(roost, extent, nCircles);
-        const solveResult = await solveConnectivity(
-          resistance.totalRes.data, extent.m, extent.n, -9999, source, ground,
-        );
-        if (solveResult.warning) ctx.onLog?.('warning', solveResult.warning);
-        ctx.onLog?.('info', `Connectivity solve complete (${solveResult.totalIters} iterations).`);
-        const layers = await buildConnectivityResultLayers(solveResult, resistance.totalRes);
-        ctx.onProgress?.({ step: 'submit', fraction: 1, label: `${layers.length} layers` });
-        return { layers, summary: { stage, layerCount: layers.length } };
       }
 
       // stage === 'current': always (re)compute resistance at the current

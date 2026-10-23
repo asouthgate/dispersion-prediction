@@ -30,8 +30,8 @@ function pointLayer(raw: RoostFinderWasmResult): ResultLayerEntry {
     point(raw.weighted_mean_x, raw.weighted_mean_y, 'calls'),
   ] };
   const legend = [
-    { value: 'roost', label: 'Estimated roost', radius: 8, color: '#e11d48' },
-    { value: 'calls', label: 'Center of calls', radius: 7, color: '#2563eb' },
+    { value: 'roost', label: 'Estimated roost', radius: 8, color: '#e11d48', strokeColor: '#ffffff', strokeWidth: 2 },
+    { value: 'calls', label: 'Center of calls', radius: 7, color: '#2563eb', strokeColor: '#ffffff', strokeWidth: 2 },
     { value: 'detector', label: 'Detector', radius: 4, color: '#111111', strokeColor: '#ffffff', strokeWidth: 1 },
   ];
   return {

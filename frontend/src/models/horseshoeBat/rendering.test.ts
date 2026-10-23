@@ -18,8 +18,7 @@ vi.mock('./resistancePipeline', async (importOriginal) => ({
 import { plotRaster, encodeGeoTiff } from '@gsbio/engine';
 import { runRemoteJob } from '@gsbio/engine/remote';
 import { fetchRaster } from '../../wasm/geotiffFetch';
-import { buildResistanceResultLayers, ingestResistanceData, computeResistancePipeline } from './resistancePipeline';
-import { solveConnectivity } from '../../wasm/connectivityCompute';
+import { buildResistanceResultLayers } from './resistancePipeline';
 import { JET_COLORS } from '../../../wasm-connectivity/example/src/render.js';
 import { createHorseshoeBatExecutor } from './executor';
 
@@ -88,37 +87,7 @@ it('renders server layers sequentially and retains image variants and download U
   }
 });
 
-it('uses identical percentile colours for WASM and both server current views, retaining raw TIFFs', async () => {
-  const pipeline = { nrows: 2, ncols: 2 } as ResistanceResult;
-  for (const [, field] of fields) pipeline[field] = new Float32Array([10, NaN, 10, 10]);
-  vi.mocked(ingestResistanceData).mockResolvedValue({
-    pipelineInput: {}, coverageMask: new Uint8Array([1, 0, 1, 1]), extractedLampCount: 0,
-  } as Awaited<ReturnType<typeof ingestResistanceData>>);
-  vi.mocked(computeResistancePipeline).mockResolvedValue(pipeline);
-  const current = new Float32Array([1, 99, 2, 10]);
-  vi.mocked(solveConnectivity).mockResolvedValue({
-    voltages: new Float32Array(4), current, nrows: 2, ncols: 2, totalIters: 1,
-  });
-  vi.mocked(runRemoteJob).mockResolvedValue({ status: 'completed', result: {
-    job_id: 'job', layers: [], raw_tifs: {}, raster_extent: extent,
-  } } as Awaited<ReturnType<typeof runRemoteJob>>);
-  const ctx = { artifacts: { set: vi.fn() }, payload: {
-    stage: 'connectivity', roost: { lat: 50, lng: -3, radiusMeters: 10 },
-    features: [], lampFeatures: [], resistanceFeatures: [], params: {},
-  } } as unknown as SubmitContext;
-  const result = await createHorseshoeBatExecutor().submit(ctx, new AbortController().signal);
-  const wasmPlots = vi.mocked(plotRaster).mock.calls.filter(([, spec]) => spec.label === 'Current percentile (%)');
-  expect(wasmPlots).toHaveLength(2);
-  expect([...wasmPlots[0][0].data]).toEqual([0, 0, 50, 100]);
-  expect(wasmPlots[0][1]).toMatchObject({ palette: JET_COLORS, scale: 'linear', vmin: 0, vmax: 100, alphaCutoff: 0.25 });
-  expect(result.layers.find(layer => layer.id === 'connectivity_current')?.raw).toEqual({
-    filename: 'connectivity_current.tif', bytes: new Uint8Array(encodeGeoTiff(
-      { data: new Float32Array([1, NaN, 2, 10]), width: 2, height: 2 }, { bounds },
-    )),
-  });
-  expect([...current]).toEqual([1, 99, 2, 10]);
-
-  vi.mocked(plotRaster).mockClear();
+it('uses identical Jet percentile colours for both server current views, retaining raw TIFFs', async () => {
   vi.mocked(runRemoteJob).mockResolvedValue({ status: 'completed', result: { layers:
     ['current', 'log_current'].map(id => ({ id, name: id, url: `/${id}.tif`, crs: 'EPSG:27700', bounds,
       display: { preTransformed: id === 'log_current', transform: 'log1p', scale: 'linear' },
@@ -128,7 +97,7 @@ it('uses identical percentile colours for WASM and both server current views, re
   await createHorseshoeBatExecutor().submit({ payload: { stage: 'coverage', roost: {} } } as SubmitContext, new AbortController().signal);
   expect(plotRaster).toHaveBeenCalledTimes(4);
   for (const [grid, spec] of vi.mocked(plotRaster).mock.calls) {
-    expect(grid.data).toEqual(wasmPlots[0][0].data);
+    expect([...grid.data]).toEqual([0, 0, 50, 100]);
     expect(spec).toMatchObject({ palette: JET_COLORS, label: 'Current percentile (%)', scale: 'linear', vmin: 0, vmax: 100, alphaCutoff: 0.25, transform: 'none', preTransformed: false });
   }
   expect(vi.mocked(fetchRaster).mock.calls.map(([url]) => url)).toEqual(['/current.tif', '/current.tif']);

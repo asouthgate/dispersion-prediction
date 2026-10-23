@@ -19,6 +19,8 @@ import type { ResistanceParams } from '../../wasm/resistanceCompute';
 import { wgs84ToBng } from '../../utils/projections';
 import { solveConnectivity, type ConnectivitySolveResult } from '../../wasm/connectivityCompute';
 import { darkCorridorsModel } from './model';
+import { currentQuantiles } from '../../wasm/currentQuantiles';
+import { JET_COLORS } from '../../../wasm-connectivity/example/src/render.js';
 
 const LAMP_CATEGORIES = new Set(['Lights', 'LightSequence']);
 
@@ -84,8 +86,8 @@ function buildSourceAndGround(
   const source = new Float32Array(size);
   const ground = new Float32Array(size);
 
-  const roostCol = (easting - xmin) / pixw;
-  const roostRow = (ymax - northing) / pixw;
+  const roostCol = Math.floor((easting - xmin) / pixw);
+  const roostRow = Math.floor((ymax - northing) / pixw);
   const radiusCells = roost.radiusMeters / pixw;
   const lb = Math.max(radiusCells / Math.max(nCircles, 1), 1.0);
 
@@ -130,12 +132,15 @@ async function buildDarkCorridorsLayers(
     id: string,
     name: string,
     data: Float32Array,
-    scale: 'linear' | 'log',
+    label: string,
     circularMask: boolean,
   ) => {
     const masked = applyMask(data, mask);
-    const grid = { data: masked, width: n, height: m, crs: 'EPSG:27700' as const, bounds: bngExtent };
-    const spec: RasterPlotSpec = { palette: 'magma', scale, label: name, circularMask, colorbar: { side: 'right' } };
+    const grid = { data: currentQuantiles(masked), width: n, height: m, crs: 'EPSG:27700' as const, bounds: bngExtent };
+    const spec: RasterPlotSpec = {
+      palette: JET_COLORS, scale: 'linear', label, circularMask, colorbar: { side: 'right' },
+      vmin: 0, vmax: 100, alphaCutoff: 0.25,
+    };
     const plotted = await plotRaster(grid, spec);
     const alphaPlotted = await plotRaster(grid, { ...spec, alphaRamp: true });
     const tif = new Uint8Array(encodeGeoTiff({ data: masked, width: n, height: m }, { bounds: bngExtent }));
@@ -148,8 +153,8 @@ async function buildDarkCorridorsLayers(
     });
   };
 
-  await addLayer('lamp_res', 'Lamp resistance', lampRes, 'linear', false);
-  await addLayer('darkness_current', 'Darkness current', solveResult.current, 'log', true);
+  await addLayer('lamp_res', 'Lamp resistance', lampRes, 'Lamp resistance percentile (%)', false);
+  await addLayer('darkness_current', 'Darkness current', solveResult.current, 'Current percentile (%)', true);
 
   return layers;
 }
@@ -251,10 +256,16 @@ export function createDarkCorridorsExecutor(): Executor {
         },
       });
 
+      ctx.onProgress?.({ step: 'submit', fraction: 0.9, label: 'Computing lighting resistance (WebAssembly)...' });
+      ctx.onLog?.('info', 'Computing lighting resistance (WebAssembly)...');
       const result = await computeResistancePipeline(pipelineInput);
-      const lampRes = result.lampRes;
+      // Lamp resistance is an additive light penalty: zero means darkness,
+      // not a missing/insulating cell. Keep a conductive background everywhere
+      // terrain is valid, without adding any landscape/road/river resistance.
+      const lampRes = Float32Array.from(result.lampRes, value => Number.isFinite(value) ? 1 + value : NaN);
 
       ctx.onLog?.('info', 'Solving darkness connectivity in browser via WebAssembly (multigrid CG)…');
+      ctx.onProgress?.({ step: 'submit', fraction: 0.95, label: 'Solving darkness connectivity (WebAssembly)...' });
       const nCircles = Math.round(params.n_circles as number) || 50;
       const { source, ground } = buildSourceAndGround(roost, extent, nCircles);
       const solveResult = await solveConnectivity(
@@ -263,6 +274,8 @@ export function createDarkCorridorsExecutor(): Executor {
       if (solveResult.warning) ctx.onLog?.('warning', solveResult.warning);
       ctx.onLog?.('info', `Darkness connectivity complete (${solveResult.totalIters} iterations).`);
 
+      ctx.onProgress?.({ step: 'submit', fraction: 0.99, label: 'Rendering darkness connectivity maps...' });
+      ctx.onLog?.('info', 'Rendering darkness connectivity maps...');
       const layers = await buildDarkCorridorsLayers(lampRes, solveResult, extent);
       ctx.onProgress?.({ step: 'submit', fraction: 1, label: `${layers.length} layers` });
       return { layers, summary: { layerCount: layers.length } };

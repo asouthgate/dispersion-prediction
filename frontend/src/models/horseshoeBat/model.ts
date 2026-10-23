@@ -1,6 +1,6 @@
 import type { ModelDef } from '@gsbio/engine';
 
-export type PipelineStage = 'coverage' | 'resistance' | 'current' | 'connectivity';
+export type PipelineStage = 'coverage' | 'resistance' | 'current' | 'darkness';
 
 export const horseshoeBatModel: ModelDef = {
   id: 'horseshoe-bat',
@@ -12,7 +12,7 @@ export const horseshoeBatModel: ModelDef = {
     { key: 'coverage', label: 'Coverage', defaultLayerId: null },
     { key: 'resistance', label: 'Resistance', defaultLayerId: 'log_total_res' },
     { key: 'current', label: 'Current', defaultLayerId: 'log_current' },
-    { key: 'connectivity', label: 'Current (experimental)', defaultLayerId: 'connectivity_current' },
+    { key: 'darkness', label: 'Darkness (experimental)', defaultLayerId: 'darkness_current' },
   ],
   params: [
     { key: 'n_circles', label: 'Source circles', type: 'range', min: 1, max: 50, step: 1, default: 50 },
