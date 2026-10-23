@@ -113,7 +113,6 @@ export async function acquireToken(): Promise<string> {
 
 export async function fetchWithAuth(url: string, init: RequestInit = {}): Promise<Response> {
 
-  debug_log_token('fetchWithAuth called');
 
   const token = await acquireToken();
   const headers = new Headers(init.headers);
