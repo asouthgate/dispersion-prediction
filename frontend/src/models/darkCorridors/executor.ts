@@ -49,7 +49,10 @@ interface Extent {
 
 function selectRoost(features: ReadonlyArray<DataFeature>): RoostInfo | null {
   for (const f of features) {
-    if (f.category === 'Roost' && f.circle) {
+    if (f.category === 'Roost') {
+      if (!f.circle || !Number.isFinite(f.circle.radiusMeters) || f.circle.radiusMeters <= 0) {
+        throw new Error('Roost must have a circle with a finite positive radius.');
+      }
       return { lng: f.circle.center.lng, lat: f.circle.center.lat, radiusMeters: f.circle.radiusMeters };
     }
   }
@@ -63,7 +66,11 @@ function findLightMapFeature(features: ReadonlyArray<DataFeature>): DataFeature 
 function lightMapData(feature: DataFeature | null | undefined): LightMapData | null {
   if (!feature) return null;
   const raster = feature.data?.raster as LightMapData | null | undefined;
-  if (!raster || !raster.data || !raster.width || !raster.height) return null;
+  if (!raster || !raster.data || !Number.isInteger(raster.width) || raster.width <= 0
+      || !Number.isInteger(raster.height) || raster.height <= 0
+      || raster.data.length !== raster.width * raster.height) {
+    throw new Error('Light map has missing or invalid raster data.');
+  }
   return raster;
 }
 
@@ -89,7 +96,7 @@ function buildSourceAndGround(
   const roostCol = Math.floor((easting - xmin) / pixw);
   const roostRow = Math.floor((ymax - northing) / pixw);
   const radiusCells = roost.radiusMeters / pixw;
-  const lb = Math.max(radiusCells / Math.max(nCircles, 1), 1.0);
+  const lb = Math.max(radiusCells / nCircles, 1.0);
 
   let r = lb;
   while (r <= radiusCells) {
@@ -194,6 +201,15 @@ export function createDarkCorridorsExecutor(): Executor {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
       const { roost, lampFeatures, lightMapFeature, params } = ctx.payload as DarkPayload;
       const lightMap = lightMapData(lightMapFeature);
+      for (const key of ['resolution', 'lamp_resmax', 'lamp_xmax', 'lamp_ext']) {
+        if (!Number.isFinite(params[key]) || params[key] <= 0) {
+          throw new Error(`Parameter ${key} must be a finite positive number.`);
+        }
+      }
+      const nCircles = params.n_circles;
+      if (!Number.isInteger(nCircles) || nCircles <= 0) {
+        throw new Error('Parameter n_circles must be a positive integer.');
+      }
 
       ctx.onLog?.('info', 'Fetching terrain data for lighting resistance…');
       const job = await runResistanceJob(ctx, { roost, features: [], params }, signal);
@@ -221,9 +237,9 @@ export function createDarkCorridorsExecutor(): Executor {
         linear_rankmax: 1,
         linear_resmax: 1,
         linear_xmax: 1,
-        lamp_resmax: params.lamp_resmax as number,
-        lamp_xmax: params.lamp_xmax as number,
-        lamp_ext: params.lamp_ext as number,
+        lamp_resmax: params.lamp_resmax,
+        lamp_xmax: params.lamp_xmax,
+        lamp_ext: params.lamp_ext,
         pixw: extent.pixw,
         nrows: extent.m,
         ncols: extent.n,
@@ -267,7 +283,6 @@ export function createDarkCorridorsExecutor(): Executor {
 
       ctx.onLog?.('info', 'Solving darkness connectivity in browser via WebAssembly (multigrid CG)…');
       ctx.onProgress?.({ step: 'submit', fraction: 0.95, label: 'Solving darkness connectivity (WebAssembly)...' });
-      const nCircles = Math.round(params.n_circles as number) || 50;
       const { source, ground } = buildSourceAndGround(roost, extent, nCircles);
       const solveResult = await solveConnectivity(
         lampRes, extent.m, extent.n, -9999, source, ground,
