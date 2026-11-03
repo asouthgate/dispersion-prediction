@@ -59,7 +59,7 @@ const iconStyle = { width: 18, height: 18 };
 
 type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string; options?: Record<string, unknown>; fillOpacity?: number };
 
-const ROOST_COLOR = '#b5b348';
+const ROOST_COLOR = '#b6dbd8';
 
 const TOOLS: ToolDef[] = [
   { mode: 'select', label: 'Select', icon: <Move style={iconStyle} />, color: '#888' },
@@ -82,7 +82,7 @@ const featureStyles: FeatureStyleConfig = {
       const base = { fillColor: t.color, fillOpacity: t.fillOpacity ?? Feature_OPACITY, outlineColor: t.color, outlineWidth: 2 };
       switch (t.mode) {
         case 'point':
-          return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 1 } };
+          return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 2 } };
         case 'circle':
           return { mode: t.mode, category: t.category ?? t.label, style: { ...base, outlineWidth: 4 }, options: t.options };
         case 'linestring':
