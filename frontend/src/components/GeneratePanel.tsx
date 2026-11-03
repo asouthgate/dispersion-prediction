@@ -93,6 +93,7 @@ export function GeneratePanel() {
       <RunPanel />
       <hr className="generate-divider" />
       <ResultsPanel
+        runName={(run) => run.modelId === 'horseshoe-bat' ? (run.stage === 'current' ? 'connectivity' : run.stage || 'connectivity') : run.modelId}
         onViewLog={handleViewLog}
         onDownload={handleDownload}
         icons={{ show: <Show style={{ width: 14, height: 14 }} />, hide: <Hide style={{ width: 14, height: 14 }} /> }}

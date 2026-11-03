@@ -59,7 +59,7 @@ const iconStyle = { width: 18, height: 18 };
 
 type ToolDef = { mode: DrawMode; label: string; icon: React.ReactNode; color: string; category?: string; options?: Record<string, unknown>; fillOpacity?: number };
 
-const ROOST_COLOR = '#ffe70a';
+const ROOST_COLOR = '#b6dbd8';
 
 const TOOLS: ToolDef[] = [
   { mode: 'select', label: 'Select', icon: <Move style={iconStyle} />, color: '#888' },
@@ -82,7 +82,7 @@ const featureStyles: FeatureStyleConfig = {
       const base = { fillColor: t.color, fillOpacity: t.fillOpacity ?? Feature_OPACITY, outlineColor: t.color, outlineWidth: 2 };
       switch (t.mode) {
         case 'point':
-          return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 1 } };
+          return { mode: t.mode, category: t.category ?? t.label, style: { pointColor: t.color, pointOutlineColor: '#0a0e10', pointRadius: 2 } };
         case 'circle':
           return { mode: t.mode, category: t.category ?? t.label, style: { ...base, outlineWidth: 4 }, options: t.options };
         case 'linestring':
@@ -103,13 +103,9 @@ const resultStyles: ResultPaint = {
   circleRadius: 6,
 };
 
-const ROOST_RECT_SOURCE = 'roost-rect';
 const ROOST_CROSS_SOURCE = 'roost-cross';
-const ROOST_RECT_FILL = 'roost-rect-fill';
-const ROOST_RECT_LINE = 'roost-rect-line';
 const ROOST_CROSS_LINE = 'roost-cross-line';
 const CROSS_COLOR = ROOST_COLOR;
-const RECT_LINE_WIDTH = 2;
 const CROSS_LINE_WIDTH = 1;
 
 function readAccentColor(): string {
@@ -117,14 +113,6 @@ function readAccentColor(): string {
 }
 
 function cardinal(p: { lng: number; lat: number }, r: number, bearing: number) { return destinationPoint(p, r, bearing); }
-
-function rectGeom(center: { lng: number; lat: number }, radius: number): GeoJSON.Geometry {
-  const nw = [cardinal(center, radius, 270).lng, cardinal(center, radius, 0).lat];
-  const ne = [cardinal(center, radius, 90).lng, cardinal(center, radius, 0).lat];
-  const se = [cardinal(center, radius, 90).lng, cardinal(center, radius, 180).lat];
-  const sw = [cardinal(center, radius, 270).lng, cardinal(center, radius, 180).lat];
-  return { type: 'Polygon', coordinates: [[nw, ne, se, sw, nw] as [number, number][]] };
-}
 
 function crosshairGeom(center: { lng: number; lat: number }, radius: number): GeoJSON.Geometry {
   const N = cardinal(center, radius, 0);
@@ -140,32 +128,24 @@ function crosshairGeom(center: { lng: number; lat: number }, radius: number): Ge
   };
 }
 
-function createRoostLayers(map: any, color: string) {
+function createRoostLayers(map: any) {
   const beforeId = map.getStyle().layers.find((l: { id: string }) => l.id.startsWith('td-'))?.id;
-  map.addLayer({ id: ROOST_RECT_FILL, type: 'fill', source: ROOST_RECT_SOURCE, paint: { 'fill-color': color, 'fill-opacity': 0.04 } }, beforeId);
-  map.addLayer({ id: ROOST_RECT_LINE, type: 'line', source: ROOST_RECT_SOURCE, paint: { 'line-color': color, 'line-width': RECT_LINE_WIDTH } }, beforeId);
   map.addLayer({ id: ROOST_CROSS_LINE, type: 'line', source: ROOST_CROSS_SOURCE, paint: { 'line-color': CROSS_COLOR, 'line-width': CROSS_LINE_WIDTH } }, beforeId);
 }
 
 function setRoostData(map: any, center: { lng: number; lat: number }, radius: number) {
-  const src = map.getSource(ROOST_RECT_SOURCE);
-  if (src) src.setData({ type: 'Feature' as const, geometry: rectGeom(center, radius), properties: {} });
   const cross = map.getSource(ROOST_CROSS_SOURCE);
   if (cross) cross.setData({ type: 'Feature' as const, geometry: crosshairGeom(center, radius), properties: {} });
 }
 
 function destroyRoostLayers(map: any) {
   try { map.removeLayer(ROOST_CROSS_LINE); } catch {}
-  try { map.removeLayer(ROOST_RECT_LINE); } catch {}
-  try { map.removeLayer(ROOST_RECT_FILL); } catch {}
   try { map.removeSource(ROOST_CROSS_SOURCE); } catch {}
-  try { map.removeSource(ROOST_RECT_SOURCE); } catch {}
 }
 
 function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
   const engine = useEngine();
   const lastKey = useRef<string | null>(null);
-  const roostColor = ROOST_COLOR;
 
   /** Ensure that there is only one roost */
   useEffect(() => {
@@ -192,17 +172,15 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
       const map = renderer.getMap();
       if (!map) return;
       const roost = engine.getSnapshot().features.features.find((f: DataFeature) => f.category === 'Roost');
-      if (roost?.circle) {
+      if (roost?.circle && roost.visible) {
         const { center, radiusMeters } = roost.circle;
         const key = `${center.lng.toFixed(8)},${center.lat.toFixed(8)},${radiusMeters}`;
-        const complete = map.getSource(ROOST_RECT_SOURCE) && map.getSource(ROOST_CROSS_SOURCE)
-          && map.getLayer(ROOST_RECT_FILL) && map.getLayer(ROOST_RECT_LINE) && map.getLayer(ROOST_CROSS_LINE);
+        const complete = map.getSource(ROOST_CROSS_SOURCE) && map.getLayer(ROOST_CROSS_LINE);
         if (key === lastKey.current && complete) return;
         if (!complete) {
           destroyRoostLayers(map);
-          map.addSource(ROOST_RECT_SOURCE, { type: 'geojson', data: { type: 'Feature', geometry: rectGeom(center, radiusMeters), properties: {} } });
           map.addSource(ROOST_CROSS_SOURCE, { type: 'geojson', data: { type: 'Feature', geometry: crosshairGeom(center, radiusMeters), properties: {} } });
-          createRoostLayers(map, roostColor);
+          createRoostLayers(map);
         } else {
           setRoostData(map, center, radiusMeters);
         }
@@ -214,7 +192,7 @@ function RoostOverlay({ renderer }: { renderer: TerraDraw2DRenderer }) {
     };
     syncOverlay();
     return engine.subscribe(syncOverlay);
-  }, [engine, renderer, roostColor]);
+  }, [engine, renderer]);
 
   return null;
 }

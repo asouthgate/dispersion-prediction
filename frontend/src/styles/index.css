@@ -606,9 +606,6 @@ input[type='radio'] { accent-color: var(--accent); }
 }
 @keyframes hashSlide { from { background-position: 0 0; } to { background-position: 40px 0; } }
 
-.btn-run--succeeded { border-left: 3px solid var(--success); }
-.btn-run--failed { border-left: 3px solid var(--danger); }
-.btn-run--cancelled { border-left: 3px solid var(--border-light); color: var(--text-secondary); }
 
 .btn-cancel {
   flex: 0 0 auto; width: auto;
