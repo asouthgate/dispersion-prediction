@@ -23,13 +23,17 @@ import { horseshoeBatModel } from '../horseshoeBat/model';
 
 beforeEach(() => vi.resetAllMocks());
 
-it('routes the darkness stage through lighting-only preprocessing', async () => {
+it('keeps lamps and user buildings for darkness preprocessing, excluding roads', async () => {
   const executor = createHorseshoeBatExecutor();
   const roost = { category: 'Roost', circle: { center: { lat: 50, lng: -3 }, radiusMeters: 100 } };
   const lamp = { id: 'lamp', category: 'Lights' };
-  const ctx = { stage: 'darkness', params: { resolution: 2 }, features: [roost, lamp, { category: 'Road' }] } as unknown as PreprocessContext;
+  const buildings = [
+    { id: 'drawn-building', category: 'Building' },
+    { id: 'imported-building', category: 'Building', source: 'file' },
+  ];
+  const ctx = { stage: 'darkness', params: { resolution: 2 }, features: [roost, lamp, ...buildings, { category: 'Road' }] } as unknown as PreprocessContext;
   const prepared = await executor.preprocess(ctx, new AbortController().signal);
-  expect(prepared.payload).toMatchObject({ stage: 'darkness', lampFeatures: [lamp], params: { resolution: 2 } });
+  expect(prepared.payload).toMatchObject({ stage: 'darkness', lampFeatures: [lamp], buildingFeatures: buildings, params: { resolution: 2 } });
   await expect(executor.preprocess({ ...ctx, features: ctx.features.filter(feature => feature.category !== 'Lights') }, new AbortController().signal))
     .rejects.toThrow('Import lamp points or a light map first.');
 });
@@ -50,10 +54,11 @@ it('keeps dark cells conductive, solves only lighting resistance, and maps both 
   });
   vi.mocked(plotRaster).mockResolvedValue({ url: 'plot', boundsWgs84: bounds } as RasterPlotResult);
   const lamps = [{ id: 'lamp', category: 'Lights' }];
+  const buildings = [{ id: 'building', category: 'Building', data: { height: 10 } }];
   const params = { resolution: 1, n_circles: 50, lamp_resmax: 100, lamp_xmax: 1, lamp_ext: 100 };
   const ctx = { payload: {
     stage: 'darkness',
-    roost: { lat: 50, lng: -3, radiusMeters: 1 }, lampFeatures: lamps, params,
+    roost: { lat: 50, lng: -3, radiusMeters: 1 }, lampFeatures: lamps, buildingFeatures: buildings, params,
   } } as unknown as SubmitContext;
   const result = await createHorseshoeBatExecutor().submit(ctx, new AbortController().signal);
   expect(horseshoeBatModel.stages?.map(stage => stage.key)).toEqual(['coverage', 'resistance', 'current', 'darkness']);
@@ -64,7 +69,7 @@ it('keeps dark cells conductive, solves only lighting resistance, and maps both 
   expect([rows, cols, nodata]).toEqual([2, 2, -9999]);
   expect([...ground]).toEqual([0, 0, 0, 1]);
   expect([...lampRes]).toEqual([0, NaN, 5, 10]);
-  expect(vi.mocked(ingestResistanceData).mock.calls[0][0].features).toBe(lamps);
+  expect(vi.mocked(ingestResistanceData).mock.calls[0][0].features).toEqual([...lamps, ...buildings]);
   expect(vi.mocked(runRemoteJob).mock.calls[0][1]).toMatchObject({ params, features: [] });
   expect(plotRaster).toHaveBeenCalledTimes(4);
   for (const [grid, spec] of vi.mocked(plotRaster).mock.calls) {
