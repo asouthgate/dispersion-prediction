@@ -33,6 +33,7 @@ interface RoostInfo {
 interface DarkPayload {
   roost: RoostInfo;
   lampFeatures: DataFeature[];
+  buildingFeatures: DataFeature[];
   lightMapFeature: DataFeature | null;
   params: Record<string, number>;
 }
@@ -176,6 +177,7 @@ export function createDarkCorridorsExecutor(): Executor {
         throw new Error('No roost defined. Place a roost on the map first.');
       }
       const lampFeatures = ctx.features.filter((f) => LAMP_CATEGORIES.has(f.category));
+      const buildingFeatures = ctx.features.filter((f) => f.category === 'Building');
       const lightMapFeature = findLightMapFeature(ctx.features);
 
       if (lampFeatures.length > 0 && lightMapFeature) {
@@ -191,6 +193,7 @@ export function createDarkCorridorsExecutor(): Executor {
         payload: {
           roost,
           lampFeatures,
+          buildingFeatures,
           lightMapFeature,
           params: { ...ctx.params },
         },
@@ -199,7 +202,7 @@ export function createDarkCorridorsExecutor(): Executor {
 
     async submit(ctx, signal) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { roost, lampFeatures, lightMapFeature, params } = ctx.payload as DarkPayload;
+      const { roost, lampFeatures, buildingFeatures, lightMapFeature, params } = ctx.payload as DarkPayload;
       const lightMap = lightMapData(lightMapFeature);
       for (const key of ['resolution', 'lamp_resmax', 'lamp_xmax', 'lamp_ext']) {
         if (!Number.isFinite(params[key]) || params[key] <= 0) {
@@ -262,7 +265,7 @@ export function createDarkCorridorsExecutor(): Executor {
       const { pipelineInput } = await ingestResistanceData({
         rawTifs: jobResult.raw_tifs,
         rawGeojson: jobResult.raw_geojson,
-        features: lampFeatures,
+        features: [...lampFeatures, ...buildingFeatures],
         extent,
         params: rastParams,
         lightmap,
